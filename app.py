@@ -40,7 +40,9 @@ if end_date < start_date:
 # static config for all modules
 plotly_template     = get_plotly_template()
 grafana_colors      = {"OPEN":"#7EB26D","CLOSE":"#E24D42"}
-flow_colors         = {"Low":"#056E5A","Mid":"#292963","High":"#871445"}
+flow_colors         = {"Low":"#6E8CC8", "Mid":"#AFBEE1","High":"#0014DC"} # Standard
+#flow_colors         = {"Low":"#A687D6", "Mid":"#875EC7","High":"#6938BF"} # Purples
+#flow_colors         = {"Low":"#82DCCD", "Mid":"#50CDB4","High":"#00B996"} # Teals
 flow_category_order = ["Low","Mid","High"]
 flow_thresholds = {
     "Annular":(3,7), "Pipe Ram":(5,10),

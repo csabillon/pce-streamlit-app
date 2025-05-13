@@ -1,3 +1,5 @@
+# logic/dashboard_data.py
+
 import pandas as pd
 import numpy as np
 from datetime import timedelta
@@ -46,13 +48,18 @@ def load_dashboard_data(
         ordered=True
     )
 
-    # 4) Max pressure ±30s
-    df["Max Pressure (±30s)"] = np.nan
+    # 4) Max pressure around each event → write directly into "Max Pressure"
+    df["Max Pressure"] = np.nan
     for p_df in get_pressure_df(pressure_map, sm, em):
-        v_ser = p_df.set_index(p_df.index)["pressure"].sort_index()
-        mask = df["valve"] == p_df["valve"].iloc[0]
-        df.loc[mask, "Max Pressure (±30s)"] = assign_max_pressure_vectorized(
-            df.loc[mask], v_ser
+        valve_name = p_df["valve"].iloc[0]
+        p_ser = p_df.set_index(p_df.index)["pressure"].sort_index()
+        mask = df["valve"] == valve_name
+        # pass valve_class & category_windows so it can pick the same window you used for delta
+        df.loc[mask, "Max Pressure"] = assign_max_pressure_vectorized(
+            df.loc[mask],
+            p_ser,
+            valve_class,
+            category_windows,
         )
 
     # 5) Active‑Pod tagging for events
@@ -95,10 +102,9 @@ def load_dashboard_data(
     vol_annot.set_index("timestamp", inplace=True)
     vol_annot.drop(columns=["ActiveSem_CBM"], inplace=True)
 
-    # 7) Instantaneous flow rate (gpm) – fix deprecation with .bfill()
+    # 7) Instantaneous flow rate (gpm)
     dt_s = vol_annot.index.to_series().diff().dt.total_seconds()
     dv   = vol_annot["accumulator"].diff()
-    # dv [gal] / dt_s [s] => gal/sec, ×60 => gal/min
     vol_annot["flow_rate_gpm_inst"] = (dv / (dt_s/60)).bfill()
 
     # 8) Event‑average flow rate (gpm)

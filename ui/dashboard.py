@@ -60,7 +60,7 @@ def render_dashboard(
             # ───────────────────────────────────────────────────
             # Row 2: Boxplots for Δ and for Pressure
             st.markdown("---")
-            st.subheader("Boxplots by Flow Category")
+            #st.subheader("Boxplots by Flow Category")
             b1, b2, b3, b4 = st.columns(4)
             # Δ (gal) boxplots
             bd_o, bd_c = plot_boxplots(sub, flow_colors, plotly_template)
@@ -74,7 +74,7 @@ def render_dashboard(
             # ───────────────────────────────────────────────────
             # Row 3: Scatter – Pressure vs Flow Rate & vs Δ
             st.markdown("---")
-            st.subheader("Pressure vs Flow Rate & Δ Flow")
+            #st.subheader("Pressure vs Flow Rate & Δ Flow")
             s1, s2, s3, s4 = st.columns(4)
             fr_o, fr_c = plot_pressure_vs_flowrate(sub, flow_colors, plotly_template)
             d_o, d_c   = plot_pressure_vs_delta(sub, flow_colors, plotly_template)
@@ -89,6 +89,18 @@ def render_dashboard(
             st.subheader("Pressure and Flow Over Time")
             ts_fig = plot_time_series(sub, plotly_template, grafana_colors)
             st.plotly_chart(ts_fig, use_container_width=True, key=f"{pod_name}_time")
+
+            # ───────────────────────────────────────────────────
+            # Accumulator (global both pods)
+            st.markdown("---")
+            st.subheader("Accumulator Totalizer")
+            fig_acc = plot_accumulator(vol_df, plotly_template)
+            st.plotly_chart(
+                fig_acc,
+                use_container_width=True,
+                key=f"{pod_name}_acc"
+            )
+
 
             # ───────────────────────────────────────────────────
             # Tables
@@ -109,13 +121,3 @@ def render_dashboard(
                 key=f"{pod_name}_details"
             )
 
-            # ───────────────────────────────────────────────────
-            # Accumulator (global both pods)
-            st.markdown("---")
-            st.subheader("Accumulator Totalizer (Gallons Over Time)")
-            fig_acc = plot_accumulator(vol_df, plotly_template)
-            st.plotly_chart(
-                fig_acc,
-                use_container_width=True,
-                key=f"{pod_name}_acc"
-            )

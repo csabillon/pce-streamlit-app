@@ -10,9 +10,9 @@ def generate_statistics_table(df):
                   "Min Δ (gal)":   ("Δ (gal)", "min"),
                   "Max Δ (gal)":   ("Δ (gal)", "max"),
                   "Total Volume (gal)": ("Δ (gal)", "sum"),
-                  "Avg Pressure (psi)": ("Max Pressure (±30s)", "mean"),
-                  "Min Pressure (psi)": ("Max Pressure (±30s)", "min"),
-                  "Max Pressure (psi)": ("Max Pressure (±30s)", "max"),
+                  "Avg Pressure (psi)": ("Max Pressure", "mean"),
+                  "Min Pressure (psi)": ("Max Pressure", "min"),
+                  "Max Pressure (psi)": ("Max Pressure", "max"),
                   "Avg Flow (gpm)":     ("Flow Rate (gpm)", "mean"),
               }
           )
@@ -35,7 +35,7 @@ def generate_details_table(df):
             "Δ (gal)",
             "Event Duration (min)",
             "Flow Rate (gpm)",
-            "Max Pressure (±30s)",
+            "Max Pressure",
             "Active Pod",
         ]
     ]

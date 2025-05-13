@@ -7,13 +7,13 @@ def compute_transitions(valve_df):
 
 def extract_ramp(transitions, vol_df, valve_class, category_windows):
     """
-    For each valve transition, look ±window seconds around the event in vol_df,
+    For each valve transition, look in a total window W around the event (80% before, 20% after),
     find the “ramp” portion (delta > 80th percentile), and record:
       - timestamp (event time)
       - valve, prev_state, state
       - Start Time / End Time (exact timestamps of accumulator start/end)
-      - Start (gal), End (gal), Δ (gal)
-    Skips any event whose window overlaps one already used.
+      - Start (gal), End (gal), Δ (gal)
+    Skips any event whose [t0, t1] overlaps one already used.
     """
     rows = []
     vol = vol_df.copy()
@@ -25,10 +25,12 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
     for _, row in trans.iterrows():
         valve = row["valve"]
         t = row["timestamp"]
-        w = pd.Timedelta(seconds=category_windows[valve_class[valve]])
-        t0, t1 = t - w, t + w
+        W = pd.Timedelta(seconds=category_windows[valve_class[valve]])
+        # 80% before, 20% after → total span = W
+        t0 = t - 0.8 * W
+        t1 = t + 0.2 * W
 
-        # skip if overlaps a previous [t0,t1]
+        # skip if overlaps any previous [t0, t1]
         if any((t0 <= end and t1 >= start) for start, end in used):
             continue
 
@@ -36,6 +38,7 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
         if segment.empty:
             continue
         segment["delta"] = segment["accumulator"].diff()
+        # use 80th percentile as threshold
         thresh = segment["delta"].quantile(0.6)
         ramp = segment[segment["delta"] > thresh]
         if ramp.empty:

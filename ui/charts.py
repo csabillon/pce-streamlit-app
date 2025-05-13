@@ -120,7 +120,7 @@ def plot_pressure_boxplots(df, flow_colors, template):
     close_df = d[d["state"] == "CLOSE"]
 
     box_open = px.box(
-        open_df, x="Flow Category", y="Max Pressure (±30s)",
+        open_df, x="Flow Category", y="Max Pressure",
         title="OPEN – Pressure Boxplot",
         template=template,
         category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
@@ -131,7 +131,7 @@ def plot_pressure_boxplots(df, flow_colors, template):
     box_open.update_layout(margin=SMALL_MARGIN)
 
     box_close = px.box(
-        close_df, x="Flow Category", y="Max Pressure (±30s)",
+        close_df, x="Flow Category", y="Max Pressure",
         title="CLOSE – Pressure Boxplot",
         template=template,
         category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
@@ -144,76 +144,129 @@ def plot_pressure_boxplots(df, flow_colors, template):
     return box_open, box_close
 
 
+# … at top of file …
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
+
+FLOW_CATEGORY_ORDER = ["Low", "Mid", "High"]
+PIE_SIZE = 300
+BAR_SIZE = 300
+SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
+
+# … your other functions …
+
 def plot_pressure_vs_delta(df, flow_colors, template):
     """
-    Legacy: Pressure vs Δ (gal).
+    Legacy: Pressure vs Δ (gal) with an overall black trend‑line,
+    but rename the trendline to just “Trend”.
     """
     d = df.copy()
-    d["Flow Category"] = pd.Categorical(
-        d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
-    )
-    open_df = d[d["state"] == "OPEN"]
+    d["Flow Category"] = pd.Categorical(d["Flow Category"],
+                                        categories=FLOW_CATEGORY_ORDER,
+                                        ordered=True)
+    open_df  = d[d["state"] == "OPEN"]
     close_df = d[d["state"] == "CLOSE"]
 
-    scatter_open = px.scatter(
-        open_df, x="Δ (gal)", y="Max Pressure (±30s)",
-        title="OPEN – Pressure vs Δ (gal)",
-        color="Flow Category",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color_discrete_map=flow_colors,
-        height=PIE_SIZE, width=PIE_SIZE
-    )
-    scatter_open.update_layout(margin=SMALL_MARGIN)
+    def _mk(scdf, title):
+        fig = px.scatter(
+            scdf,
+            x="Δ (gal)",
+            y="Max Pressure",
+            title=title,
+            color="Flow Category",
+            template=template,
+            category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
+            color_discrete_map=flow_colors,
+            trendline="ols",
+            trendline_scope="overall",
+            trendline_color_override="#696969",
+            height=PIE_SIZE, width=PIE_SIZE,
+        )
+        # rename the auto‑generated “Overall Trendline” trace
+        fig.update_traces(
+            selector=dict(mode="lines"),
+            name="Trend"
+        )
+        fig.update_layout(margin=SMALL_MARGIN)
+        return fig
 
-    scatter_close = px.scatter(
-        close_df, x="Δ (gal)", y="Max Pressure (±30s)",
-        title="CLOSE – Pressure vs Δ (gal)",
-        color="Flow Category",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color_discrete_map=flow_colors,
-        height=PIE_SIZE, width=PIE_SIZE
-    )
-    scatter_close.update_layout(margin=SMALL_MARGIN)
-
-    return scatter_open, scatter_close
+    return _mk(open_df, "OPEN – Pressure vs Δ (gal)"), \
+           _mk(close_df, "CLOSE – Pressure vs Δ (gal)")
 
 
 def plot_pressure_vs_flowrate(df, flow_colors, template):
     """
-    New: Pressure vs event‑average Flow Rate (gpm).
+    Pressure vs event‑average Flow Rate (gpm) with an overall black trend‑line,
+    renamed to “Trend”.
     """
     d = df.copy()
-    d["Flow Category"] = pd.Categorical(
-        d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
-    )
-    open_df = d[d["state"] == "OPEN"]
+    d["Flow Category"] = pd.Categorical(d["Flow Category"],
+                                        categories=FLOW_CATEGORY_ORDER,
+                                        ordered=True)
+    open_df  = d[d["state"] == "OPEN"]
     close_df = d[d["state"] == "CLOSE"]
 
-    scatter_open = px.scatter(
-        open_df, x="Flow Rate (gpm)", y="Max Pressure (±30s)",
-        title="OPEN – Pressure vs Flow Rate (gpm)",
-        color="Flow Category",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color_discrete_map=flow_colors,
-        height=PIE_SIZE, width=PIE_SIZE
-    )
-    scatter_open.update_layout(margin=SMALL_MARGIN)
+    def _mk(scdf, title):
+        fig = px.scatter(
+            scdf,
+            x="Flow Rate (gpm)",
+            y="Max Pressure",
+            title=title,
+            color="Flow Category",
+            template=template,
+            category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
+            color_discrete_map=flow_colors,
+            trendline="ols",
+            trendline_scope="overall",
+            trendline_color_override="#696969",
+            height=PIE_SIZE, width=PIE_SIZE,
+        )
+        fig.update_traces(
+            selector=dict(mode="lines"),
+            name="Trend"
+        )
+        fig.update_layout(margin=SMALL_MARGIN)
+        return fig
 
-    scatter_close = px.scatter(
-        close_df, x="Flow Rate (gpm)", y="Max Pressure (±30s)",
-        title="CLOSE – Pressure vs Flow Rate (gpm)",
-        color="Flow Category",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color_discrete_map=flow_colors,
-        height=PIE_SIZE, width=PIE_SIZE
-    )
-    scatter_close.update_layout(margin=SMALL_MARGIN)
+    return _mk(open_df, "OPEN – Pressure vs Flow Rate (gpm)"), \
+           _mk(close_df, "CLOSE – Pressure vs Flow Rate (gpm)")
 
-    return scatter_open, scatter_close
+
+def plot_accumulator(vol_df, template):
+    """
+    Plot accumulator over time as a single line per pod-segment,
+    but make the overall figure less tall.
+    """
+    df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
+    df["segment"] = (df["Active Pod"] != df["Active Pod"].shift()).cumsum()
+    pod_colors = {"Blue Pod": "#1f77b4", "Yellow Pod": "#ffdd57"}
+
+    fig = go.Figure()
+    for _, seg in df.groupby("segment", sort=False):
+        pod = seg["Active Pod"].iloc[0]
+        fig.add_trace(
+            go.Scatter(
+                x=seg["timestamp"],
+                y=seg["accumulator"],
+                mode="lines",
+                line=dict(color=pod_colors.get(pod, "#999999"), width=2),
+                showlegend=False,
+            )
+        )
+
+    max_pts = 45000
+    dur     = (vol_df.index[-1] - vol_df.index[0]).total_seconds()
+    interval = f"{max(int(dur / max_pts), 1)}s"
+
+    fig.update_layout(
+        title=f"Accumulator Gallons Over Time ({interval})",
+        template=template,
+        height=350,                # <<< reduce height here
+        margin=dict(l=20, r=20, t=40, b=20),
+    )
+    return fig
 
 
 def plot_time_series(sub_df, template, grafana_colors):
@@ -224,7 +277,7 @@ def plot_time_series(sub_df, template, grafana_colors):
     for state in ["OPEN", "CLOSE"]:
         s = sub_df[sub_df["state"] == state]
         fig.add_trace(go.Scatter(
-            x=s["timestamp"], y=s["Max Pressure (±30s)"],
+            x=s["timestamp"], y=s["Max Pressure"],
             mode="markers", name=f"Pressure ({state})",
             marker=dict(color=grafana_colors[state])
         ), row=1, col=1)
@@ -235,34 +288,7 @@ def plot_time_series(sub_df, template, grafana_colors):
         ), row=2, col=1)
 
     fig.update_layout(
-        height=600, template=template,
-        margin=dict(l=20, r=20, t=40, b=20),
-    )
-    return fig
-
-
-def plot_accumulator(vol_df, template):
-    df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
-    df["segment"] = (df["Active Pod"] != df["Active Pod"].shift()).cumsum()
-    pod_colors = {"Blue Pod": "#1f77b4", "Yellow Pod": "#ffdd57"}
-
-    fig = go.Figure()
-    for _, seg in df.groupby("segment", sort=False):
-        pod = seg["Active Pod"].iloc[0]
-        fig.add_trace(go.Scatter(
-            x=seg["timestamp"], y=seg["accumulator"],
-            mode="lines",
-            line=dict(color=pod_colors.get(pod, "#999999"), width=2),
-            showlegend=False,
-        ))
-
-    max_pts = 45000
-    dur     = (vol_df.index[-1] - vol_df.index[0]).total_seconds()
-    interval = f"{max(int(dur / max_pts),1)}s"
-
-    fig.update_layout(
-        title=f"Accumulator Gallons Over Time ({interval})",
-        template=template,
+        height=400, template=template,
         margin=dict(l=20, r=20, t=40, b=20),
     )
     return fig
