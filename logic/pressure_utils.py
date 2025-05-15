@@ -13,19 +13,40 @@ def assign_max_pressure_vectorized(
 ) -> np.ndarray:
     """
     For each event in events_df, look back pre_frac*W seconds and forward post_frac*W seconds 
-    (where W = category_windows[valve_class[valve]]), then take the max pressure in that slice.
-    Returns an array of the same length as events_df with the max‐pressure for each event.
+    (where W = category_windows[valve_class[valve]]), then take the AVERAGE of the top 20%
+    of pressure readings in that slice.
+    Returns an array of the same length as events_df with that “top‑20% average” for each event.
     """
     # Ensure timestamps are datetime
     ts = pd.to_datetime(events_df["timestamp"])
-    # Build per‐event pre/post offsets
-    # e.g. for valve "Annular" with slider=30 → W=30s → pre=24s, post=6s
-    pre_offsets = events_df["valve"].map(lambda v: pd.Timedelta(seconds=category_windows[valve_class[v]] * pre_frac))
-    post_offsets = events_df["valve"].map(lambda v: pd.Timedelta(seconds=category_windows[valve_class[v]] * post_frac))
+
+    # Compute per‑event windows
+    pre_offsets = events_df["valve"].map(
+        lambda v: pd.Timedelta(seconds=category_windows[valve_class[v]] * pre_frac)
+    )
+    post_offsets = events_df["valve"].map(
+        lambda v: pd.Timedelta(seconds=category_windows[valve_class[v]] * post_frac)
+    )
 
     out = np.full(len(events_df), np.nan)
+
     for i, (t, pre, post) in enumerate(zip(ts, pre_offsets, post_offsets)):
-        window_slice = pressure_series.loc[t - pre : t + post]
-        if not window_slice.empty:
-            out[i] = window_slice.max()
+        window_slice = pressure_series.loc[t - pre : t + post].dropna()
+        if window_slice.empty:
+            continue
+
+        arr = window_slice.values
+        # if fewer than 5 points, just average them all
+        if len(arr) < 5:
+            out[i] = arr.mean()
+        else:
+            # compute 80th percentile threshold
+            thr = np.percentile(arr, 75)
+            top_vals = arr[arr >= thr]
+            # in edge cases where >=thr yields empty (due to duplicates), fall back to max
+            if top_vals.size:
+                out[i] = top_vals.mean()
+            else:
+                out[i] = arr.max()
+
     return out
