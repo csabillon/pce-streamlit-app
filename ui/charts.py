@@ -1,9 +1,11 @@
+# ui/charts.py
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-FLOW_CATEGORY_ORDER = ["Low", "Mid", "High"]
+from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 # Sizes for the small pies / bars
 PIE_SIZE = 300
@@ -12,30 +14,29 @@ BAR_SIZE = 300
 # Shared margin
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 
-def plot_open_close_pie_bar(df, flow_colors):
-    open_sub = df[df["state"] == "OPEN"].copy()
-    close_sub = df[df["state"] == "CLOSE"].copy()
 
+def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
+    """Returns: pie_open, bar_open, pie_close, bar_close"""
     def make_pie_bar(subset, state):
+        subset = subset.copy()
         subset["Flow Category"] = pd.Categorical(
             subset["Flow Category"],
             categories=FLOW_CATEGORY_ORDER,
             ordered=True,
         )
-        # --- PIE (counts + % outside) ---
         counts = (
-            subset["Flow Category"]
-                  .value_counts()
-                  .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
-                  .reset_index()
+            subset
+            .groupby("Flow Category", observed=True)
+            .size()
+            .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
+            .reset_index(name="Count")
         )
-        counts.columns = ["Flow Category", "Count"]
         pie = px.pie(
             counts,
             names="Flow Category",
             values="Count",
             hole=0.5,
-            title=f"{state} – Utilization",
+            title=f"{state} – Utilization",
             color="Flow Category",
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color_discrete_map=flow_colors,
@@ -45,24 +46,22 @@ def plot_open_close_pie_bar(df, flow_colors):
         pie.update_traces(
             textinfo="value+percent",
             textposition="outside",
-            insidetextorientation="horizontal",
             automargin=True,
         )
         pie.update_layout(legend_title_text="Flow Category", margin=SMALL_MARGIN)
 
-        # --- BAR (Δ flow volume) ---
         volume = (
             subset
             .groupby("Flow Category", observed=True)["Δ (gal)"]
             .sum()
             .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
-            .reset_index()
+            .reset_index(name="Δ (gal)")
         )
         bar = px.bar(
             volume,
             x="Flow Category",
             y="Δ (gal)",
-            title=f"{state} – Δ (gal) Flow Volume",
+            title=f"{state} – Δ (gal) Flow Volume",
             color="Flow Category",
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color_discrete_map=flow_colors,
@@ -73,175 +72,112 @@ def plot_open_close_pie_bar(df, flow_colors):
 
         return pie, bar
 
+    open_sub  = df[df["state"] == "OPEN"]
+    close_sub = df[df["state"] == "CLOSE"]
     return make_pie_bar(open_sub, "OPEN") + make_pie_bar(close_sub, "CLOSE")
 
 
-def plot_boxplots(df, flow_colors, template):
-    """Δ (gal) boxplots for OPEN/CLOSE."""
+def plot_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
+    """Δ (gal) boxplots for OPEN and CLOSE."""
     d = df.copy()
     d["Flow Category"] = pd.Categorical(
         d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
     )
-    open_df = d[d["state"] == "OPEN"]
-    close_df = d[d["state"] == "CLOSE"]
 
-    box_open = px.box(
-        open_df, x="Flow Category", y="Δ (gal)",
-        title="OPEN – Δ (gal) Boxplot",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color="Flow Category",
-        color_discrete_map=flow_colors,
-        height=BAR_SIZE, width=BAR_SIZE,
+    def mk_box(sub_df, title):
+        fig = px.box(
+            sub_df,
+            x="Flow Category",
+            y="Δ (gal)",
+            title=title,
+            template=template,
+            category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
+            color="Flow Category",
+            color_discrete_map=flow_colors,
+            height=BAR_SIZE,
+            width=BAR_SIZE,
+        )
+        fig.update_layout(margin=SMALL_MARGIN)
+        return fig
+
+    return (
+        mk_box(d[d["state"] == "OPEN"],  "OPEN – Δ (gal) Boxplot"),
+        mk_box(d[d["state"] == "CLOSE"], "CLOSE – Δ (gal) Boxplot"),
     )
-    box_open.update_layout(margin=SMALL_MARGIN)
-
-    box_close = px.box(
-        close_df, x="Flow Category", y="Δ (gal)",
-        title="CLOSE – Δ (gal) Boxplot",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color="Flow Category",
-        color_discrete_map=flow_colors,
-        height=BAR_SIZE, width=BAR_SIZE,
-    )
-    box_close.update_layout(margin=SMALL_MARGIN)
-
-    return box_open, box_close
 
 
-def plot_pressure_boxplots(df, flow_colors, template):
-    """Pressure boxplots for OPEN/CLOSE by flow category."""
+def plot_pressure_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
+    """Max Pressure boxplots for OPEN and CLOSE by flow category."""
     d = df.copy()
     d["Flow Category"] = pd.Categorical(
         d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
     )
-    open_df = d[d["state"] == "OPEN"]
-    close_df = d[d["state"] == "CLOSE"]
 
-    box_open = px.box(
-        open_df, x="Flow Category", y="Max Pressure",
-        title="OPEN – Pressure Boxplot",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color="Flow Category",
-        color_discrete_map=flow_colors,
-        height=BAR_SIZE, width=BAR_SIZE,
-    )
-    box_open.update_layout(margin=SMALL_MARGIN)
-
-    box_close = px.box(
-        close_df, x="Flow Category", y="Max Pressure",
-        title="CLOSE – Pressure Boxplot",
-        template=template,
-        category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
-        color="Flow Category",
-        color_discrete_map=flow_colors,
-        height=BAR_SIZE, width=BAR_SIZE,
-    )
-    box_close.update_layout(margin=SMALL_MARGIN)
-
-    return box_open, box_close
-
-
-# … at top of file …
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-import plotly.express as px
-import pandas as pd
-
-FLOW_CATEGORY_ORDER = ["Low", "Mid", "High"]
-PIE_SIZE = 300
-BAR_SIZE = 300
-SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
-
-# … your other functions …
-
-def plot_pressure_vs_delta(df, flow_colors, template):
-    """
-    Legacy: Pressure vs Δ (gal) with an overall black trend‑line,
-    but rename the trendline to just “Trend”.
-    """
-    d = df.copy()
-    d["Flow Category"] = pd.Categorical(d["Flow Category"],
-                                        categories=FLOW_CATEGORY_ORDER,
-                                        ordered=True)
-    open_df  = d[d["state"] == "OPEN"]
-    close_df = d[d["state"] == "CLOSE"]
-
-    def _mk(scdf, title):
-        fig = px.scatter(
-            scdf,
-            x="Δ (gal)",
+    def mk_box(sub_df, title):
+        fig = px.box(
+            sub_df,
+            x="Flow Category",
             y="Max Pressure",
             title=title,
-            color="Flow Category",
             template=template,
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
+            color="Flow Category",
             color_discrete_map=flow_colors,
-            trendline="ols",
-            trendline_scope="overall",
-            trendline_color_override="#696969",
-            height=PIE_SIZE, width=PIE_SIZE,
-        )
-        # rename the auto‑generated “Overall Trendline” trace
-        fig.update_traces(
-            selector=dict(mode="lines"),
-            name="Trend"
+            height=BAR_SIZE,
+            width=BAR_SIZE,
         )
         fig.update_layout(margin=SMALL_MARGIN)
         return fig
 
-    return _mk(open_df, "OPEN – Pressure vs Δ (gal)"), \
-           _mk(close_df, "CLOSE – Pressure vs Δ (gal)")
+    return (
+        mk_box(d[d["state"] == "OPEN"],  "OPEN – Pressure Boxplot"),
+        mk_box(d[d["state"] == "CLOSE"], "CLOSE – Pressure Boxplot"),
+    )
 
 
-def plot_pressure_vs_flowrate(df, flow_colors, template):
+def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template):
     """
-    Pressure vs event‑average Flow Rate (gpm) with an overall black trend‑line,
-    renamed to “Trend”.
+    Four scatterplots (OPEN/CLOSE × FlowRate/Δ) colored by Flow Category,
+    each with a single overall OLS trendline in grey.
+    Returns (open_fr, open_delta, close_fr, close_delta).
     """
-    d = df.copy()
-    d["Flow Category"] = pd.Categorical(d["Flow Category"],
-                                        categories=FLOW_CATEGORY_ORDER,
-                                        ordered=True)
-    open_df  = d[d["state"] == "OPEN"]
-    close_df = d[d["state"] == "CLOSE"]
-
-    def _mk(scdf, title):
+    def mk_trace(sub_df, x, y, title):
         fig = px.scatter(
-            scdf,
-            x="Flow Rate (gpm)",
-            y="Max Pressure",
+            sub_df,
+            x=x,
+            y=y,
             title=title,
             color="Flow Category",
-            template=template,
-            category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
+            category_orders={"Flow Category": flow_category_order},
             color_discrete_map=flow_colors,
+            template=template,
             trendline="ols",
             trendline_scope="overall",
             trendline_color_override="#696969",
-            height=PIE_SIZE, width=PIE_SIZE,
+            height=300,
+            width=300,
         )
-        fig.update_traces(
-            selector=dict(mode="lines"),
-            name="Trend"
-        )
+        # rename the single trendline trace
+        fig.update_traces(selector=dict(mode="lines"), name="Trend")
         fig.update_layout(margin=SMALL_MARGIN)
         return fig
 
-    return _mk(open_df, "OPEN – Pressure vs Flow Rate (gpm)"), \
-           _mk(close_df, "CLOSE – Pressure vs Flow Rate (gpm)")
+    open_sub  = df[df["state"] == "OPEN"]
+    close_sub = df[df["state"] == "CLOSE"]
+
+    return (
+        mk_trace(open_sub,  "Flow Rate (gpm)", "Max Pressure", "OPEN – Pressure vs Flow Rate (gpm)"),
+        mk_trace(open_sub,  "Δ (gal)",         "Max Pressure", "OPEN – Pressure vs Δ (gal)"),
+        mk_trace(close_sub, "Flow Rate (gpm)", "Max Pressure", "CLOSE – Pressure vs Flow Rate (gpm)"),
+        mk_trace(close_sub, "Δ (gal)",         "Max Pressure", "CLOSE – Pressure vs Δ (gal)"),
+    )
 
 
-def plot_accumulator(vol_df, template):
-    """
-    Plot accumulator over time as a single line per pod-segment,
-    but make the overall figure less tall.
-    """
+def plot_accumulator(vol_df, template="plotly"):
+    """Plot accumulator gallons over time as lines, colored by Active Pod."""
     df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
     df["segment"] = (df["Active Pod"] != df["Active Pod"].shift()).cumsum()
-    pod_colors = {"Blue Pod": "#1f77b4", "Yellow Pod": "#ffdd57"}
+    pod_colors = BY_COLORS
 
     fig = go.Figure()
     for _, seg in df.groupby("segment", sort=False):
@@ -256,39 +192,46 @@ def plot_accumulator(vol_df, template):
             )
         )
 
-    max_pts = 45000
+    max_pts = 20000
     dur     = (vol_df.index[-1] - vol_df.index[0]).total_seconds()
     interval = f"{max(int(dur / max_pts), 1)}s"
 
     fig.update_layout(
         title=f"Accumulator Gallons Over Time ({interval})",
         template=template,
-        height=350,                # <<< reduce height here
-        margin=dict(l=20, r=20, t=40, b=20),
+        height=350,
+        margin=SMALL_MARGIN,
     )
     return fig
 
 
-def plot_time_series(sub_df, template, grafana_colors):
+def plot_time_series(sub_df, template="plotly", oc_colors=None):
+    """Two-row time series for Max Pressure and Δ (gal), colored by OPEN/CLOSE."""
     fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        subplot_titles=("Max Pressure Over Time", "Δ (gal) Over Time"),
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=("Max Pressure Over Time", "Δ (gal) Over Time"),
     )
     for state in ["OPEN", "CLOSE"]:
         s = sub_df[sub_df["state"] == state]
-        fig.add_trace(go.Scatter(
-            x=s["timestamp"], y=s["Max Pressure"],
-            mode="markers", name=f"Pressure ({state})",
-            marker=dict(color=grafana_colors[state])
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=s["timestamp"], y=s["Δ (gal)"],
-            mode="markers", name=f"Δ (gal) ({state})",
-            marker=dict(color=grafana_colors[state])
-        ), row=2, col=1)
+        color = (oc_colors or {}).get(state, "#999999")
+        fig.add_trace(
+            go.Scatter(
+                x=s["timestamp"], y=s["Max Pressure"],
+                mode="markers", name=f"Pressure ({state})",
+                marker=dict(color=color),
+            ),
+            row=1, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=s["timestamp"], y=s["Δ (gal)"],
+                mode="markers", name=f"Δ (gal) ({state})",
+                marker=dict(color=color),
+            ),
+            row=2, col=1,
+        )
 
-    fig.update_layout(
-        height=400, template=template,
-        margin=dict(l=20, r=20, t=40, b=20),
-    )
+    fig.update_layout(height=400, template=template, margin=SMALL_MARGIN)
     return fig

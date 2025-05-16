@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 def render_sidebar():
     today = datetime.today()
-    default_start = today - timedelta(days=30)
+    default_start = today - timedelta(days=90)
     default_end   = today
 
     rigs = ["TransoceanDPS", "TransoceanDTH", "TransoceanDPT"]

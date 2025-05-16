@@ -1,24 +1,18 @@
 # app.py
 
 import streamlit as st
-from datetime import timedelta
-from config import (
-    CDF_PROJECT,
-    CDF_CLUSTER,
-    CDF_TENANT_ID,
-    CDF_CLIENT_ID,
-    CDF_CLIENT_SECRET,
-)
-from utils.themes import get_plotly_template
-from ui.layout import render_sidebar
-from logic.dashboard_data import load_dashboard_data
-from ui.dashboard import render_dashboard
-from ui.overview import render_overview   # ← import the updated overview
+from utils.themes           import get_plotly_template
+from ui.layout              import render_sidebar
+from logic.dashboard_data   import load_dashboard_data
+from logic.depletion        import VALVE_CLASS_MAP, FLOW_THRESHOLDS
+from ui.dashboard           import render_dashboard
+from ui.overview            import render_overview
+from utils.colors           import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
-# ────────── Page config & CSS (if any) ────────────────────────────────────
+
+
+# ────────── Page config & CSS ─────────────────────────────────────────────
 st.set_page_config(page_title="BOP Valve Dashboard", layout="wide")
-
-
 st.markdown(
     """
     <style>
@@ -35,59 +29,53 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# ────────── Sidebar inputs & page selector ───────────────────────────────
+# ────────── Sidebar inputs & page selector ────────────────────────────────
 rig, start_date, end_date, category_windows = render_sidebar()
 if end_date < start_date:
     st.sidebar.error("End Date must be on or after Start Date")
-
 page = st.sidebar.radio("Select Page", ["Valve Analytics", "Pods Overview"])
 
 # ────────── Static config ─────────────────────────────────────────────────
-plotly_template = get_plotly_template()
-grafana_colors = {"OPEN": "#7EB26D", "CLOSE": "#E24D42"}
-flow_colors = {"Low": "#6E8CC8", "Mid": "#AFBEE1", "High": "#0014DC"}
-flow_category_order = ["Low", "Mid", "High"]
-flow_thresholds = {
-    "Annular": (3, 7),
-    "Pipe Ram": (5, 10),
-    "Shear Ram": (6, 15),
-    "Casing Shear": (8, 18),
-    "Connector": (2, 5),
-}
+plotly_template     = get_plotly_template()
+oc_colors           = OC_COLORS
+by_colors           = BY_COLORS
+flow_colors         = FLOW_COLORS
+flow_category_order = FLOW_CATEGORY_ORDER
 
-prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
-prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
-
+# Single prefix for all Valve_Status tags
+_prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
 valve_map = {
-    "Upper Annular":        prefix + "1",
-    "Lower Annular":        prefix + "5",
-    "LMRP Connector":       prefix + "2",
-    "Upper Blind Shear":    prefix + "6",
-    "Casing Shear Ram":     prefix + "7",
-    "Lower Blind Shear":    prefix + "14",
-    "Upper Pipe Ram":       prefix + "8",
-    "Middle Pipe Ram":      prefix + "9",
-    "Lower Pipe Ram":       prefix + "10",
-    "Test Ram":             prefix + "74",
-    "Wellhead Connector":   prefix + "11",
+    "Upper Annular":      _prefix + "1",
+    "Lower Annular":      _prefix + "5",
+    "LMRP Connector":     _prefix + "2",
+    "Upper Blind Shear":  _prefix + "6",
+    "Casing Shear Ram":   _prefix + "7",
+    "Lower Blind Shear":  _prefix + "14",
+    "Upper Pipe Ram":     _prefix + "8",
+    "Middle Pipe Ram":    _prefix + "9",
+    "Lower Pipe Ram":     _prefix + "10",
+    "Test Ram":           _prefix + "74",
+    "Wellhead Connector": _prefix + "11",
 }
-
 valve_order = list(valve_map.keys())
 
-valve_class = {
-    "Upper Annular": "Annular",
-    "Lower Annular": "Annular",
-    "Upper Pipe Ram": "Pipe Ram",
-    "Middle Pipe Ram": "Pipe Ram",
-    "Lower Pipe Ram": "Pipe Ram",
-    "Test Ram": "Pipe Ram",
-    "Upper Blind Shear": "Shear Ram",
-    "Lower Blind Shear": "Shear Ram",
-    "Casing Shear Ram": "Casing Shear",
-    "LMRP Connector": "Connector",
-    "Wellhead Connector": "Connector",
+# Other tags passed straight through
+vol_ext        = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
+active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
+
+pressure_base     = f"pi-no:{rig}.BOP.DCP"
+pressure_map      = {
+    **{v: f"{pressure_base}.ScaledValue{n}" for v, n in [
+        ("Upper Annular", 12),
+        ("Lower Annular", 14),
+        ("Wellhead Connector", 20),
+        ("LMRP Connector", 16),
+    ]},
 }
+default_press_tag = f"{pressure_base}.ScaledValue18"
+for v in valve_map:
+    pressure_map.setdefault(v, default_press_tag)
+
 simple_map = {
     256: "CLOSE", 257: "OPEN", 258: "CLOSE",
     512: "CLOSE", 513: "OPEN", 514: "CLOSE",
@@ -95,19 +83,6 @@ simple_map = {
     1025: "OPEN", 1026: "CLOSE", 1027: "OPEN",
     1028: "CLOSE", 4096: "ERROR",
 }
-vol_ext = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
-active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
-
-pressure_base = f"pi-no:{rig}.BOP.DCP"
-pressure_map = {
-    "Upper Annular": f"{pressure_base}.ScaledValue12",
-    "Lower Annular": f"{pressure_base}.ScaledValue14",
-    "Wellhead Connector": f"{pressure_base}.ScaledValue20",
-    "LMRP Connector": f"{pressure_base}.ScaledValue16",
-}
-default_pressure = f"{pressure_base}.ScaledValue18"
-for v in valve_map:
-    pressure_map.setdefault(v, default_pressure)
 
 # ────────── Load Data on button (or first run) ────────────────────────────
 if st.sidebar.button("Load Data") or "df" not in st.session_state:
@@ -119,13 +94,13 @@ if st.sidebar.button("Load Data") or "df" not in st.session_state:
             category_windows,
             valve_map,
             simple_map,
-            valve_class,
+            VALVE_CLASS_MAP,
             vol_ext,
             pressure_map,
             active_pod_tag,
-            flow_thresholds,
+            FLOW_THRESHOLDS,
         )
-        st.session_state.df = df
+        st.session_state.df     = df
         st.session_state.vol_df = vol_df
 
 # ────────── Render Selected Page ───────────────────────────────────────────
@@ -135,18 +110,20 @@ if "df" in st.session_state:
             st.session_state.df,
             st.session_state.vol_df,
             plotly_template,
-            grafana_colors,
+            oc_colors,
             flow_colors,
             flow_category_order,
             valve_order,
         )
     else:
-        # pass grafana_colors into the overview now that it's accepted
         render_overview(
             st.session_state.df,
             st.session_state.vol_df,
             plotly_template,
-            grafana_colors,
+            oc_colors,
+            by_colors,
+            flow_colors,            
+            flow_category_order,
         )
 else:
     st.info("Please click **Load Data** in the sidebar to get started.")

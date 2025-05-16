@@ -7,8 +7,7 @@ from ui.charts import (
     plot_open_close_pie_bar,
     plot_boxplots,
     plot_pressure_boxplots,
-    plot_pressure_vs_flowrate,
-    plot_pressure_vs_delta,
+    plot_scatter_by_flowcategory,
     plot_time_series,
     plot_accumulator,
 )
@@ -18,7 +17,7 @@ def render_dashboard(
     df: pd.DataFrame,
     vol_df: pd.DataFrame,
     plotly_template: str,
-    grafana_colors: dict,
+    oc_colors: dict,
     flow_colors: dict,
     flow_category_order: list[str],
     valve_order: list[str],
@@ -29,34 +28,29 @@ def render_dashboard(
 
     for pod_name, tab in zip(pod_names, tabs):
         with tab:
-            st.subheader(f"{pod_name} – Valve Analytics")
+            st.subheader(f"{pod_name} – Valve Analytics")
 
             pod_events = df[df["Active Pod"] == pod_name]
             if pod_events.empty:
                 st.warning(f"No events for {pod_name}")
                 continue
 
-            # Build a fixed-order list and filter to what's actually present
-            available = pod_events["valve"].unique()
+            # Select Valve
+            available    = pod_events["valve"].unique()
             valid_valves = [v for v in valve_order if v in available]
-
-            # Determine default based on shared session state, falling back to the first in order
             default_valve = st.session_state.get(shared_key, valid_valves[0])
             if default_valve not in valid_valves:
                 default_valve = valid_valves[0]
             default_index = valid_valves.index(default_valve)
 
-            # Each tab gets its own widget key, but we pass `index` to preselect the shared valve
             choice = st.selectbox(
                 "Select Valve",
                 valid_valves,
                 index=default_index,
                 key=f"sel_{pod_name}",
             )
-            # Write back to the shared slot so both tabs stay in sync
             st.session_state[shared_key] = choice
 
-            # Filter to the selected valve
             sub = pod_events[pod_events["valve"] == choice].copy()
             sub["Flow Category"] = pd.Categorical(
                 sub["Flow Category"],
@@ -64,8 +58,7 @@ def render_dashboard(
                 ordered=True,
             )
 
-            # ───────────────────────────────────────────────────
-            # Row 1: Pie & Bar
+            # Row 1: Pie & Bar
             st.subheader("Pressure and Flow Distribution by Flow Category")
             c1, c2, c3, c4 = st.columns(4)
             po, bo, pc, bc = plot_open_close_pie_bar(sub, flow_colors)
@@ -74,8 +67,7 @@ def render_dashboard(
             c3.plotly_chart(pc, use_container_width=True, key=f"{pod_name}_pie_close")
             c4.plotly_chart(bc, use_container_width=True, key=f"{pod_name}_bar_close")
 
-            # ───────────────────────────────────────────────────
-            # Row 2: Boxplots for Δ and for Pressure
+            # Row 2: Boxplots
             st.markdown("---")
             b1, b2, b3, b4 = st.columns(4)
             bd_o, bd_c = plot_boxplots(sub, flow_colors, plotly_template)
@@ -85,32 +77,29 @@ def render_dashboard(
             b3.plotly_chart(bd_c, use_container_width=True, key=f"{pod_name}_bd_close")
             b4.plotly_chart(bp_c, use_container_width=True, key=f"{pod_name}_bp_close")
 
-            # ───────────────────────────────────────────────────
-            # Row 3: Scatter – Pressure vs Flow Rate & vs Δ
+            # Row 3: Scatter by Flow Category
             st.markdown("---")
             s1, s2, s3, s4 = st.columns(4)
-            fr_o, fr_c = plot_pressure_vs_flowrate(sub, flow_colors, plotly_template)
-            d_o, d_c   = plot_pressure_vs_delta(sub, flow_colors, plotly_template)
-            s1.plotly_chart(fr_o, use_container_width=True, key=f"{pod_name}_fr_open")
-            s2.plotly_chart(d_o, use_container_width=True, key=f"{pod_name}_d_open")
-            s3.plotly_chart(fr_c, use_container_width=True, key=f"{pod_name}_fr_close")
-            s4.plotly_chart(d_c, use_container_width=True, key=f"{pod_name}_d_close")
+            scatter_figs = plot_scatter_by_flowcategory(
+                sub, flow_colors, flow_category_order, plotly_template
+            )
+            s1.plotly_chart(scatter_figs[0], use_container_width=True, key=f"{pod_name}_fr_open")
+            s2.plotly_chart(scatter_figs[1], use_container_width=True, key=f"{pod_name}_d_open")
+            s3.plotly_chart(scatter_figs[2], use_container_width=True, key=f"{pod_name}_fr_close")
+            s4.plotly_chart(scatter_figs[3], use_container_width=True, key=f"{pod_name}_d_close")
 
-            # ───────────────────────────────────────────────────
             # Time Series
             st.markdown("---")
             st.subheader("Pressure and Flow Over Time")
-            ts_fig = plot_time_series(sub, plotly_template, grafana_colors)
+            ts_fig = plot_time_series(sub, plotly_template, oc_colors)
             st.plotly_chart(ts_fig, use_container_width=True, key=f"{pod_name}_time")
 
-            # ───────────────────────────────────────────────────
-            # Accumulator (global both pods)
+            # Accumulator
             st.markdown("---")
             st.subheader("Accumulator Totalizer")
             fig_acc = plot_accumulator(vol_df, plotly_template)
             st.plotly_chart(fig_acc, use_container_width=True, key=f"{pod_name}_acc")
 
-            # ───────────────────────────────────────────────────
             # Tables
             st.markdown("---")
             st.subheader("Valve Event Statistics")

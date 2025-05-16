@@ -4,45 +4,46 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-FLOW_CATEGORY_ORDER = ["Low", "Mid", "High"]
-PIE_SIZE = 300
-BOX_SIZE = 300
+PIE_SIZE     = 300
+BOX_SIZE     = 300
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 
 def render_overview(
     df: pd.DataFrame,
     vol_df: pd.DataFrame,
     plotly_template: str,
-    grafana_colors: dict,  # {"OPEN":"#7EB26D","CLOSE":"#E24D42"}
+    oc_colors: dict,
+    by_colors: dict,      
+    flow_colors: dict,         
+    flow_category_order: list,  
 ):
     st.header("Pods Overview")
 
-    # ── Keep only Blue & Yellow Pods ──────────────────────────────────────
+    # ── Filter to Blue & Yellow ────────────────────────────────────────────
     df2 = df[df["Active Pod"].isin(["Blue Pod", "Yellow Pod"])].copy()
 
-    # ── Normalize timestamp once ──────────────────────────────────────────
+    # ── Prepare vol_df ────────────────────────────────────────────────────
     vol = vol_df.copy()
     if "timestamp" in vol.columns:
-        ts = pd.to_datetime(vol["timestamp"])
+        vol["timestamp"] = pd.to_datetime(vol["timestamp"])
     elif isinstance(vol.index, pd.DatetimeIndex):
-        ts = vol.index.to_series().reset_index(drop=True)
+        vol = vol.reset_index().rename(columns={vol.index.name or "index": "timestamp"})
+        vol["timestamp"] = pd.to_datetime(vol["timestamp"])
     else:
-        vol = vol.reset_index()
-        ts = pd.to_datetime(vol.iloc[:, 0])
-    vol = vol.reset_index(drop=True)
-    vol["timestamp"] = ts
+        vol = vol.reset_index().rename(columns={vol.columns[0]: "timestamp"})
+        vol["timestamp"] = pd.to_datetime(vol["timestamp"])
     vol = vol[vol["Active Pod"].isin(["Blue Pod", "Yellow Pod"])]
 
-    # ── Compute totals ────────────────────────────────────────────────────
+    # ── Compute Time & Flow Utilization ──────────────────────────────────
     vol = vol.sort_values("timestamp")
     vol["time_diff"] = vol["timestamp"].diff().dt.total_seconds().fillna(0)
-    vol["pod_prev"] = vol["Active Pod"].shift().fillna(vol["Active Pod"])
+    vol["pod_prev"]  = vol["Active Pod"].shift().fillna(vol["Active Pod"])
     time_by_pod = (
         vol.groupby("pod_prev")["time_diff"]
            .sum().reset_index()
            .rename(columns={"pod_prev":"Pod","time_diff":"Time_Sec"})
     )
-    time_by_pod["Time_Min"] = (time_by_pod["Time_Sec"] / 60).round(1)
+    time_by_pod["Time_Min"] = (time_by_pod["Time_Sec"]/60).round(1)
     total_min = time_by_pod["Time_Min"].sum()
 
     flow_by_pod = (
@@ -53,146 +54,144 @@ def render_overview(
     flow_by_pod["Flow_Gal"] = flow_by_pod["Flow_Gal"].round(1)
     total_gal = flow_by_pod["Flow_Gal"].sum()
 
-    # ── Top row: Donut pies + boxplots ────────────────────────────────────
+    # ── Top row: Donut pies & boxplots ────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
 
     # Time Utilization Pie
     with c1:
-        fig_time = px.pie(
+        fig = px.pie(
             time_by_pod, names="Pod", values="Time_Min", hole=0.5,
-            title=f"Time Utilization (Total {total_min} min)",
+            title=f"Time Utilization\n(Total {total_min} min)",
             color="Pod",
-            color_discrete_map={"Blue Pod":"#6E8CC8","Yellow Pod":"#F9E79F"},
+            color_discrete_map=by_colors,
             template=plotly_template,
             height=PIE_SIZE, width=PIE_SIZE,
         )
-        fig_time.update_traces(
-            domain=dict(x=[0.15,0.85], y=[0.15,0.85]),
-            textinfo="value+percent",
-            textposition="outside",
-            automargin=True,
+        fig.update_traces(
+            textinfo="value+percent", textposition="outside",
+            domain=dict(x=[0.15,0.85], y=[0.15,0.85]), automargin=True
         )
-        fig_time.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
-        st.plotly_chart(fig_time, use_container_width=True)
+        fig.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
+        st.plotly_chart(fig, use_container_width=True)
 
     # Flow Utilization Pie
     with c2:
-        fig_flow = px.pie(
+        fig = px.pie(
             flow_by_pod, names="Pod", values="Flow_Gal", hole=0.5,
-            title=f"Flow Utilization (Total {total_gal} gal)",
+            title=f"Flow Utilization\n(Total {total_gal} gal)",
             color="Pod",
-            color_discrete_map={"Blue Pod":"#6E8CC8","Yellow Pod":"#F9E79F"},
+            color_discrete_map=by_colors,
             template=plotly_template,
             height=PIE_SIZE, width=PIE_SIZE,
         )
-        fig_flow.update_traces(
-            domain=dict(x=[0.15,0.85], y=[0.15,0.85]),
-            textinfo="value+percent",
-            textposition="outside",
-            automargin=True,
+        fig.update_traces(
+            textinfo="value+percent", textposition="outside",
+            domain=dict(x=[0.15,0.85], y=[0.15,0.85]), automargin=True
         )
-        fig_flow.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
-        st.plotly_chart(fig_flow, use_container_width=True)
+        fig.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
+        st.plotly_chart(fig, use_container_width=True)
 
     # Δ (gal) Boxplot
+    df2_cat = df2.assign(**{"Flow Category": pd.Categorical(
+        df2["Flow Category"], categories=flow_category_order, ordered=True
+    )})
     with c3:
-        fig_delta = px.box(
-            df2.assign(**{"Flow Category": pd.Categorical(
-                df2["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
-            )}),
-            x="Active Pod", y="Δ (gal)", color="state",
-            title="Δ (gal) Boxplot",
+        fig = px.box(
+            df2_cat, x="Active Pod", y="Δ (gal)", color="state",
+            title="Δ (gal) Boxplot",
             template=plotly_template,
-            category_orders={"Active Pod":["Blue Pod","Yellow Pod"],"state":["OPEN","CLOSE"]},
-            color_discrete_map=grafana_colors,
+            category_orders={
+                "Active Pod": ["Blue Pod", "Yellow Pod"],
+                "state":      ["OPEN", "CLOSE"],
+            },
+            color_discrete_map=oc_colors,
             height=BOX_SIZE, width=BOX_SIZE,
         )
-        fig_delta.update_layout(margin=SMALL_MARGIN, showlegend=True)
-        st.plotly_chart(fig_delta, use_container_width=True)
+        fig.update_layout(margin=SMALL_MARGIN, showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
 
     # Max Pressure Boxplot
     with c4:
-        fig_pr = px.box(
-            df2.assign(**{"Flow Category": pd.Categorical(
-                df2["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
-            )}),
-            x="Active Pod", y="Max Pressure", color="state",
+        fig = px.box(
+            df2_cat, x="Active Pod", y="Max Pressure", color="state",
             title="Max Pressure Boxplot",
             template=plotly_template,
-            category_orders={"Active Pod":["Blue Pod","Yellow Pod"],"state":["OPEN","CLOSE"]},
-            color_discrete_map=grafana_colors,
+            category_orders={
+                "Active Pod": ["Blue Pod", "Yellow Pod"],
+                "state":      ["OPEN", "CLOSE"],
+            },
+            color_discrete_map=oc_colors,
             height=BOX_SIZE, width=BOX_SIZE,
         )
-        fig_pr.update_layout(margin=SMALL_MARGIN, showlegend=True)
-        st.plotly_chart(fig_pr, use_container_width=True)
+        fig.update_layout(margin=SMALL_MARGIN, showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 
-    # ── Bottom: Blue / spacer / Yellow ─────────────────────────────────────
-    left_col, spacer_col, right_col = st.columns([1, 0.02, 1])
+    # ── Bottom row: 3 columns, stacked by Flow Category, total-only labels ──────────────────
+    col_blue, col_yellow, col_total = st.columns(3)
 
-    # Draw the vertical line in the spacer
-    with spacer_col:
-        line_height = BOX_SIZE + SMALL_MARGIN["t"] + SMALL_MARGIN["b"]
-        st.markdown(
-            f'<div style="border-left:1px solid #ddd; height:{line_height}px; margin-top:10px;"></div>',
-            unsafe_allow_html=True,
+    def plot_depletion(pod_name: str, container, df_src: pd.DataFrame):
+        # Summarize depletion by valve & flow category
+        summary = (
+            df_src
+            .groupby(["valve", "Flow Category"])["Depletion (%)"]
+            .sum().reset_index()
+        )
+        pivot = (
+            summary
+            .pivot(index="valve", columns="Flow Category", values="Depletion (%)")
+            .fillna(0)
+            .reindex(columns=flow_category_order, fill_value=0)
         )
 
-    # Blue Pod section
-    with left_col:
-        st.subheader("Blue Pod")
-        bo, bc = st.columns(2)
-        with bo:
-            fig_bo = px.scatter(
-                df2.query('`Active Pod`=="Blue Pod" and state=="OPEN"'),
-                x="Δ (gal)", y="Max Pressure",
-                trendline="ols",
-                title="OPEN – Pressure vs Δ (gal)",
-                template=plotly_template,
-                color_discrete_sequence=[grafana_colors["OPEN"]],
-                height=BOX_SIZE, width=BOX_SIZE,
-            )
-            fig_bo.update_layout(margin=SMALL_MARGIN, showlegend=False)
-            st.plotly_chart(fig_bo, use_container_width=True)
-        with bc:
-            fig_bc = px.scatter(
-                df2.query('`Active Pod`=="Blue Pod" and state=="CLOSE"'),
-                x="Δ (gal)", y="Max Pressure",
-                trendline="ols",
-                title="CLOSE – Pressure vs Δ (gal)",
-                template=plotly_template,
-                color_discrete_sequence=[grafana_colors["CLOSE"]],
-                height=BOX_SIZE, width=BOX_SIZE,
-            )
-            fig_bc.update_layout(margin=SMALL_MARGIN, showlegend=False)
-            st.plotly_chart(fig_bc, use_container_width=True)
+        # Melt for px.bar
+        long = pivot.reset_index().melt(
+            id_vars="valve", var_name="Flow Category", value_name="Depletion"
+        )
 
-    # Yellow Pod section
-    with right_col:
-        st.subheader("Yellow Pod")
-        yo, yc = st.columns(2)
-        with yo:
-            fig_yo = px.scatter(
-                df2.query('`Active Pod`=="Yellow Pod" and state=="OPEN"'),
-                x="Δ (gal)", y="Max Pressure",
-                trendline="ols",
-                title="OPEN – Pressure vs Δ (gal)",
-                template=plotly_template,
-                color_discrete_sequence=[grafana_colors["OPEN"]],
-                height=BOX_SIZE, width=BOX_SIZE,
+        # Build stacked bar chart
+        fig = px.bar(
+            long,
+            y="valve",
+            x="Depletion",
+            color="Flow Category",
+            orientation="h",
+            title=pod_name,
+            template=plotly_template,
+            category_orders={"Flow Category": flow_category_order},
+            color_discrete_map=flow_colors,
+            text=None,  # no segment labels
+        )
+
+        # Add a single annotation per bar: the total depletion
+        totals = pivot.sum(axis=1)
+        for valve, total in totals.items():
+            fig.add_annotation(
+                x=total,
+                y=valve,
+                text=f"{total:.1f}%",
+                showarrow=False,
+                xanchor="left",
+                font=dict(size=12),
             )
-            fig_yo.update_layout(margin=SMALL_MARGIN, showlegend=False)
-            st.plotly_chart(fig_yo, use_container_width=True)
-        with yc:
-            fig_yc = px.scatter(
-                df2.query('`Active Pod`=="Yellow Pod" and state=="CLOSE"'),
-                x="Δ (gal)", y="Max Pressure",
-                trendline="ols",
-                title="CLOSE – Pressure vs Δ (gal)",
-                template=plotly_template,
-                color_discrete_sequence=[grafana_colors["CLOSE"]],
-                height=BOX_SIZE, width=BOX_SIZE,
-            )
-            fig_yc.update_layout(margin=SMALL_MARGIN, showlegend=False)
-            st.plotly_chart(fig_yc, use_container_width=True)
+
+        # Dynamic height & layout
+        n = pivot.shape[0]
+        height = max(BOX_SIZE, n * 40 + 120)
+        fig.update_layout(
+            height=height,
+            margin=dict(l=240, r=20, t=40, b=20),
+            showlegend=(pod_name == "Total"),  # legend only on Total
+        )
+        fig.update_xaxes(title="Depletion (%)")
+        fig.update_yaxes(automargin=True, tickfont=dict(size=12), title="")
+
+        container.plotly_chart(fig, use_container_width=True)
+
+    with col_blue:
+        plot_depletion("Blue Pod", col_blue, df2[df2["Active Pod"] == "Blue Pod"])
+    with col_yellow:
+        plot_depletion("Yellow Pod", col_yellow, df2[df2["Active Pod"] == "Yellow Pod"])
+    with col_total:
+        plot_depletion("Total", col_total, df2)
