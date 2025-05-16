@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 from utils.themes           import get_plotly_template
 from ui.layout              import render_sidebar
@@ -8,8 +6,6 @@ from logic.depletion        import VALVE_CLASS_MAP, FLOW_THRESHOLDS
 from ui.dashboard           import render_dashboard
 from ui.overview            import render_overview
 from utils.colors           import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
-
-
 
 # ────────── Page config & CSS ─────────────────────────────────────────────
 st.set_page_config(page_title="BOP Valve Dashboard", layout="wide")
@@ -29,11 +25,45 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ────────── Sidebar inputs & page selector ────────────────────────────────
-rig, start_date, end_date, category_windows = render_sidebar()
+# ────────── Deep-link support via URL params ───────────────────────────────
+params        = st.query_params
+requested_rig = params.get("rig", [])    # e.g. ["TODPS"]
+requested_pg  = params.get("page", [])   # e.g. ["Pods Overview"]
+
+# Map your Angular codes to our sidebar rig names
+rig_map = {
+    "TODPS": "TransoceanDPS",
+    "TODTH": "TransoceanDTH",
+    "TODPT": "TransoceanDPT",
+}
+default_rig = rig_map.get(requested_rig[0]) if requested_rig else None
+
+# Render the sidebar (with optional pre-selected rig)
+rig, start_date, end_date, category_windows = render_sidebar(default_rig)
 if end_date < start_date:
     st.sidebar.error("End Date must be on or after Start Date")
-page = st.sidebar.radio("Select Page", ["Valve Analytics", "Pods Overview"])
+
+# Page‐selector with deep-link
+all_pages = ["Valve Analytics", "Pods Overview"]
+page_key = "sidebar_selected_page"
+
+# If URL asked for a valid page, write it into session_state first
+if requested_pg and requested_pg[0] in all_pages:
+    st.session_state[page_key] = requested_pg[0]
+
+default_index = (
+    all_pages.index(requested_pg[0])
+    if requested_pg and requested_pg[0] in all_pages
+    else 0
+)
+
+page = st.sidebar.radio(
+    "Select Page",
+    all_pages,
+    index=default_index,
+    key=page_key,
+)
+
 
 # ────────── Static config ─────────────────────────────────────────────────
 plotly_template     = get_plotly_template()
@@ -59,7 +89,6 @@ valve_map = {
 }
 valve_order = list(valve_map.keys())
 
-# Other tags passed straight through
 vol_ext        = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
 active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
 
@@ -122,7 +151,7 @@ if "df" in st.session_state:
             plotly_template,
             oc_colors,
             by_colors,
-            flow_colors,            
+            flow_colors,
             flow_category_order,
         )
 else:
