@@ -44,7 +44,7 @@ def render_overview(
            .rename(columns={"pod_prev":"Pod","time_diff":"Time_Sec"})
     )
     time_by_pod["Time_Min"] = (time_by_pod["Time_Sec"]/60).round(1)
-    total_min = time_by_pod["Time_Min"].sum()
+    total_min = time_by_pod["Time_Min"].sum().round(1)
 
     flow_by_pod = (
         df2.groupby("Active Pod")["Δ (gal)"]
@@ -52,7 +52,7 @@ def render_overview(
            .rename(columns={"Active Pod":"Pod","Δ (gal)":"Flow_Gal"})
     )
     flow_by_pod["Flow_Gal"] = flow_by_pod["Flow_Gal"].round(1)
-    total_gal = flow_by_pod["Flow_Gal"].sum()
+    total_gal = flow_by_pod["Flow_Gal"].sum().round(1)
 
     # ── Top row: Donut pies & boxplots ────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
@@ -190,8 +190,8 @@ def render_overview(
         container.plotly_chart(fig, use_container_width=True)
 
     with col_blue:
-        plot_depletion("Blue Pod", col_blue, df2[df2["Active Pod"] == "Blue Pod"])
+        plot_depletion("Blue Pod: Depletion by Flow Category", col_blue, df2[df2["Active Pod"] == "Blue Pod"])
     with col_yellow:
-        plot_depletion("Yellow Pod", col_yellow, df2[df2["Active Pod"] == "Yellow Pod"])
+        plot_depletion("Yellow Pod: Depletion by Flow Category", col_yellow, df2[df2["Active Pod"] == "Yellow Pod"])
     with col_total:
-        plot_depletion("Total", col_total, df2)
+        plot_depletion("Total Depletion by Flow Category", col_total, df2)

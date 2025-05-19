@@ -1,16 +1,17 @@
+# app.py
+
 import streamlit as st
-from utils.themes           import get_plotly_template
-from ui.layout              import render_sidebar
-from logic.dashboard_data   import load_dashboard_data
-from logic.depletion        import VALVE_CLASS_MAP, FLOW_THRESHOLDS
-from ui.dashboard           import render_dashboard
-from ui.overview            import render_overview
-from utils.colors           import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
+from utils.themes         import get_plotly_template
+from ui.layout            import render_sidebar
+from logic.dashboard_data import load_dashboard_data
+from logic.depletion      import VALVE_CLASS_MAP, FLOW_THRESHOLDS
+from ui.dashboard         import render_dashboard
+from ui.overview          import render_overview
+from utils.colors         import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 # ────────── Page config & CSS ─────────────────────────────────────────────
 st.set_page_config(page_title="BOP Valve Dashboard", layout="wide")
-st.markdown(
-    """
+st.markdown("""
     <style>
       .stPlotlyChart {
         border: 1px solid #ddd !important;
@@ -21,48 +22,44 @@ st.markdown(
         box-sizing: border-box !important;
       }
     </style>
-    """,
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ────────── Deep-link support via URL params ───────────────────────────────
-params        = st.query_params
-requested_rig = params.get("rig", [])    # e.g. ["TODPS"]
-requested_pg  = params.get("page", [])   # e.g. ["Pods Overview"]
+params          = st.query_params
+requested_rig   = params.get("rig", [])   # e.g. "TODPS"
+requested_page  = params.get("page", [])  # e.g. "Pods Overview"
 
-# Map your Angular codes to our sidebar rig names
+
+#st.write("🕵️‍♂️ requested_rig  =", requested_rig)
+#st.write("🕵️‍♂️ requested_pg   =", requested_page)
+
+
+# Map your Angular rig IDs to the sidebar labels
 rig_map = {
     "TODPS": "TransoceanDPS",
     "TODTH": "TransoceanDTH",
     "TODPT": "TransoceanDPT",
 }
-default_rig = rig_map.get(requested_rig[0]) if requested_rig else None
+default_rig = rig_map.get(requested_rig, None)
 
-# Render the sidebar (with optional pre-selected rig)
+# ────────── Sidebar inputs & rig selector ────────────────────────────────
 rig, start_date, end_date, category_windows = render_sidebar(default_rig)
 if end_date < start_date:
     st.sidebar.error("End Date must be on or after Start Date")
 
-# Page‐selector with deep-link
+# ────────── Page selector with deep-link ─────────────────────────────────
 all_pages = ["Valve Analytics", "Pods Overview"]
-page_key = "sidebar_selected_page"
-
-# If URL asked for a valid page, write it into session_state first
-if requested_pg and requested_pg[0] in all_pages:
-    st.session_state[page_key] = requested_pg[0]
-
-default_index = (
-    all_pages.index(requested_pg[0])
-    if requested_pg and requested_pg[0] in all_pages
-    else 0
-)
+if requested_page in all_pages:
+    page_index = all_pages.index(requested_page)
+else:
+    page_index = 0
 
 page = st.sidebar.radio(
     "Select Page",
     all_pages,
-    index=default_index,
-    key=page_key,
+    index=page_index,
 )
+
 
 
 # ────────── Static config ─────────────────────────────────────────────────
@@ -72,7 +69,7 @@ by_colors           = BY_COLORS
 flow_colors         = FLOW_COLORS
 flow_category_order = FLOW_CATEGORY_ORDER
 
-# Single prefix for all Valve_Status tags
+# ────────── Valve tag mappings ────────────────────────────────────────────
 _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
 valve_map = {
     "Upper Annular":      _prefix + "1",
@@ -92,9 +89,9 @@ valve_order = list(valve_map.keys())
 vol_ext        = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
 active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
 
-pressure_base     = f"pi-no:{rig}.BOP.DCP"
-pressure_map      = {
-    **{v: f"{pressure_base}.ScaledValue{n}" for v, n in [
+pressure_base = f"pi-no:{rig}.BOP.DCP"
+pressure_map  = {
+    **{v: f"{pressure_base}.ScaledValue{n}" for v,n in [
         ("Upper Annular", 12),
         ("Lower Annular", 14),
         ("Wellhead Connector", 20),
