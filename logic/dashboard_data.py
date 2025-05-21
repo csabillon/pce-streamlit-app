@@ -1,14 +1,15 @@
 # logic/dashboard_data.py
 
+import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import timedelta
 
-from logic.data_loader      import get_volume_df, get_valve_df, get_pressure_df, get_raw_df
-from logic.helpers          import to_ms, classify_flow
-from logic.processing       import compute_transitions, extract_ramp
-from logic.pressure_utils   import assign_max_pressure_vectorized
-from logic.depletion        import load_and_preprocess  
+from logic.data_loader    import get_volume_df, get_valve_df, get_pressure_df, get_raw_df
+from logic.helpers        import to_ms, classify_flow
+from logic.processing     import compute_transitions, extract_ramp
+from logic.pressure_utils import assign_max_pressure_vectorized
+from logic.depletion      import load_and_preprocess
 
 def _map_active_pod(value: float) -> str:
     if value in (1, 2):
@@ -17,6 +18,10 @@ def _map_active_pod(value: float) -> str:
         return "Yellow Pod"
     return "Unknown"
 
+@st.cache_data(
+    ttl=24 * 3600,             # cache for 24 hours
+    show_spinner="Loading dashboard…"
+)
 def load_dashboard_data(
     rig,
     start_date,

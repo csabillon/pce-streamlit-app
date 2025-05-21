@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 
+
 def render_sidebar(default_rig: str | None = None):
     """
     Renders the rig selector, dates, and sliders.
@@ -24,6 +25,7 @@ def render_sidebar(default_rig: str | None = None):
         default_index = 0
 
     # Now render the selectbox with that key
+
     rig = st.sidebar.selectbox(
         "Select Rig",
         rigs,

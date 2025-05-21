@@ -9,10 +9,15 @@ from ui.dashboard         import render_dashboard
 from ui.overview          import render_overview
 from utils.colors         import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
-# ────────── Page config & CSS ─────────────────────────────────────────────
-st.set_page_config(page_title="BOP Valve Dashboard", layout="wide")
+# ────────── Page config & base CSS ────────────────────────────────────────
+st.set_page_config(
+    page_title="BOP Valve Dashboard",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 st.markdown("""
     <style>
+      /* ── Chart styling ───────────────────────────────────────────────── */
       .stPlotlyChart {
         border: 1px solid #ddd !important;
         border-radius: 10px !important;
@@ -21,20 +26,42 @@ st.markdown("""
         overflow: hidden !important;
         box-sizing: border-box !important;
       }
+
+      /* ── Hide the “Deploy” button ─────────────────────────────────────── */
+      /* Streamlit ≤1.37 */
+      .stDeployButton {
+        visibility: hidden !important;
+      }
+      /* Streamlit ≥1.38 */
+      .stAppDeployButton,
+      button[data-testid="stAppViewDeployButton"] {
+        display: none !important;
+      }
     </style>
 """, unsafe_allow_html=True)
 
 # ────────── Deep-link support via URL params ───────────────────────────────
-params          = st.query_params
-requested_rig   = params.get("rig", [])   # e.g. "TODPS"
-requested_page  = params.get("page", [])  # e.g. "Pods Overview"
+params        = st.query_params
+rig_list      = params.get("rig",   [])         # e.g. ["TODPS"]
+page_list     = params.get("page",  [])         # e.g. ["Pods Overview"]
+theme_list    = params.get("theme", [])         # e.g. ["dark"]
 
+# preserve rig/page as lists
+requested_rig   = rig_list   if rig_list   else None
+requested_page  = page_list  if page_list  else None
+# extract theme string
+requested_theme = theme_list if theme_list else None
 
-#st.write("🕵️‍♂️ requested_rig  =", requested_rig)
-#st.write("🕵️‍♂️ requested_pg   =", requested_page)
+# ────────── Apply built-in Streamlit ───────────────────────────────
+# Only if it really is "dark" or "light" do we call the private setter
+if requested_theme in ("dark", "light"):
+    #st.write("🕵️‍♂️ requested_theme   =", requested_theme)
+    st._config.set_option("theme.base", requested_theme)
 
+# Now that theme.base is set, you can fetch the Plotly template correctly:
+plotly_template = get_plotly_template()
 
-# Map your Angular rig IDs to the sidebar labels
+# ────────── Map your Angular rig IDs to the sidebar labels ────────────────
 rig_map = {
     "TODPS": "TransoceanDPS",
     "TODTH": "TransoceanDTH",
@@ -59,8 +86,6 @@ page = st.sidebar.radio(
     all_pages,
     index=page_index,
 )
-
-
 
 # ────────── Static config ─────────────────────────────────────────────────
 plotly_template     = get_plotly_template()
@@ -92,10 +117,10 @@ active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
 pressure_base = f"pi-no:{rig}.BOP.DCP"
 pressure_map  = {
     **{v: f"{pressure_base}.ScaledValue{n}" for v,n in [
-        ("Upper Annular", 12),
-        ("Lower Annular", 14),
+        ("Upper Annular",      12),
+        ("Lower Annular",      14),
         ("Wellhead Connector", 20),
-        ("LMRP Connector", 16),
+        ("LMRP Connector",     16),
     ]},
 }
 default_press_tag = f"{pressure_base}.ScaledValue18"
@@ -103,31 +128,31 @@ for v in valve_map:
     pressure_map.setdefault(v, default_press_tag)
 
 simple_map = {
-    256: "CLOSE", 257: "OPEN", 258: "CLOSE",
-    512: "CLOSE", 513: "OPEN", 514: "CLOSE",
-    515: "OPEN", 516: "CLOSE", 1024: "CLOSE",
-    1025: "OPEN", 1026: "CLOSE", 1027: "OPEN",
-    1028: "CLOSE", 4096: "ERROR",
+    256:  "CLOSE",  257: "OPEN",   258: "CLOSE",
+    512:  "CLOSE",  513: "OPEN",   514: "CLOSE",
+    515:  "OPEN",   516: "CLOSE",  1024: "CLOSE",
+    1025: "OPEN",   1026: "CLOSE", 1027: "OPEN",
+    1028: "CLOSE",  4096: "ERROR",
 }
 
 # ────────── Load Data on button (or first run) ────────────────────────────
 if st.sidebar.button("Load Data") or "df" not in st.session_state:
-    with st.spinner("Loading dashboard…"):
-        df, vol_df = load_dashboard_data(
-            rig,
-            start_date,
-            end_date,
-            category_windows,
-            valve_map,
-            simple_map,
-            VALVE_CLASS_MAP,
-            vol_ext,
-            pressure_map,
-            active_pod_tag,
-            FLOW_THRESHOLDS,
-        )
-        st.session_state.df     = df
-        st.session_state.vol_df = vol_df
+    df, vol_df = load_dashboard_data(
+        rig,
+        start_date,
+        end_date,
+        category_windows,
+        valve_map,
+        simple_map,
+        VALVE_CLASS_MAP,
+        vol_ext,
+        pressure_map,
+        active_pod_tag,
+        FLOW_THRESHOLDS,
+    )
+    st.session_state.df     = df
+    st.session_state.vol_df = vol_df
+
 
 # ────────── Render Selected Page ───────────────────────────────────────────
 if "df" in st.session_state:

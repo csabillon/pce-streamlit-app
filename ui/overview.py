@@ -182,7 +182,7 @@ def render_overview(
         fig.update_layout(
             height=height,
             margin=dict(l=240, r=20, t=40, b=20),
-            showlegend=(pod_name == "Total"),  # legend only on Total
+            showlegend=(pod_name == "Total Depletion by Flow Category"),  # legend only on Total
         )
         fig.update_xaxes(title="Depletion (%)")
         fig.update_yaxes(automargin=True, tickfont=dict(size=12), title="")
