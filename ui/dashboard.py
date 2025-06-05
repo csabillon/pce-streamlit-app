@@ -1,5 +1,4 @@
 # ui/dashboard.py
-
 import streamlit as st
 import pandas as pd
 
@@ -22,22 +21,29 @@ def render_dashboard(
     flow_category_order: list[str],
     valve_order: list[str],
 ):
-    pod_names = ["Blue Pod", "Yellow Pod"]
+    # Add "Composite" alongside each pod
+    pod_names = ["Composite", "Blue Pod", "Yellow Pod"]
+
     tabs = st.tabs(pod_names)
     shared_key = "selected_valve"
 
     for pod_name, tab in zip(pod_names, tabs):
         with tab:
-            st.subheader(f"{pod_name} – Valve Analytics")
+            # Determine which events to show
+            if pod_name == "Composite":
+                st.subheader("Composite – Valve Analytics")
+                pod_events = df.copy()
+            else:
+                st.subheader(f"{pod_name} – Valve Analytics")
+                pod_events = df[df["Active Pod"] == pod_name]
 
-            pod_events = df[df["Active Pod"] == pod_name]
             if pod_events.empty:
                 st.warning(f"No events for {pod_name}")
                 continue
 
-            # Select Valve
-            available    = pod_events["valve"].unique()
-            valid_valves = [v for v in valve_order if v in available]
+            # Valve selector (shared across tabs)
+            available     = pod_events["valve"].unique()
+            valid_valves  = [v for v in valve_order if v in available]
             default_valve = st.session_state.get(shared_key, valid_valves[0])
             if default_valve not in valid_valves:
                 default_valve = valid_valves[0]
