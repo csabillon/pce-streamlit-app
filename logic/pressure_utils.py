@@ -40,7 +40,7 @@ def assign_max_pressure_vectorized(
         if len(arr) < 5:
             out[i] = arr.mean()
         else:
-            # compute 80th percentile threshold
+            # compute 75th percentile threshold
             thr = np.percentile(arr, 75)
             top_vals = arr[arr >= thr]
             # in edge cases where >=thr yields empty (due to duplicates), fall back to max

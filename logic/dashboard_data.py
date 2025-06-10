@@ -131,3 +131,30 @@ def load_dashboard_data(
     df = load_and_preprocess(df)
 
     return df, vol_annot
+
+
+def get_timeseries_data(tag, start_date, end_date):
+    """
+    Universal function for retrieving timeseries data by tag and date.
+    Returns a DataFrame with columns ['timestamp', 'value'].
+    Handles both valve/volume tags and EDS/Pod tags.
+    """
+    sm = to_ms(start_date)
+    em = to_ms(end_date + timedelta(days=1)) - 1
+
+    # Use get_raw_df for any tag
+    df = get_raw_df(tag, sm, em)
+
+    # Standardize output
+    if not df.empty:
+        # Try to ensure a 'timestamp' column
+        if 'timestamp' not in df.columns:
+            df = df.reset_index().rename(columns={df.index.name or 'index': 'timestamp'})
+        # Try to ensure a 'value' column
+        if 'value' not in df.columns:
+            value_cols = [col for col in df.columns if col not in ('timestamp', 'index')]
+            if value_cols:
+                df = df.rename(columns={value_cols[0]: 'value'})
+        return df[['timestamp', 'value']]
+    else:
+        return pd.DataFrame(columns=['timestamp', 'value'])

@@ -3,8 +3,9 @@ from utils.themes import get_plotly_template
 from ui.layout import render_sidebar
 from logic.dashboard_data import load_dashboard_data
 from logic.depletion import VALVE_CLASS_MAP, FLOW_THRESHOLDS
-from ui.dashboard import render_dashboard
-from ui.overview import render_overview
+from ui.page_dashboard import render_dashboard
+from ui.page_overview import render_overview
+from ui.page_eds_cycles import render_eds_cycles
 from utils.colors import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 st.set_page_config(
@@ -37,17 +38,10 @@ requested_rig = params.get("rig", None)
 requested_page = params.get("page", None)
 requested_theme = params.get("theme", None)
 
-# Convert empty strings to None for safety
 requested_rig = requested_rig if requested_rig else None
 requested_page = requested_page if requested_page else None
 requested_theme = requested_theme if requested_theme else None
 
-# Debugging outputs
-print("requested_rig:", requested_rig)
-print("requested_page:", requested_page)
-print("requested_theme:", requested_theme)
-
-# Immediately apply theme
 if requested_theme in ("dark", "light"):
     st._config.set_option("theme.base", requested_theme)
 
@@ -57,16 +51,15 @@ rig_map = {
     "TODPS": "TransoceanDPS",
     "TODTH": "TransoceanDTH",
     "TODPT": "TransoceanDPT",
+    "STDMX": "Drillmax",
 }
 default_rig = rig_map.get(requested_rig, None)
-
-print("default_rig:", default_rig)
 
 # Sidebar
 rig, start_date, end_date, category_windows = render_sidebar(default_rig)
 
 # Page selection
-all_pages = ["Valve Analytics", "Pods Overview"]
+all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles"]
 page_index = all_pages.index(requested_page) if requested_page in all_pages else 0
 page = st.sidebar.radio("Select Page", all_pages, index=page_index)
 
@@ -93,10 +86,15 @@ valve_map = {
 }
 valve_order = list(valve_map.keys())
 
-vol_ext = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
-active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
+if rig == "Drillmax":
+    vol_ext = f"pi-no:{rig}.BOP.CBM.HPU_MAINACC_ACC_NoReset"
+    active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem"
+    pressure_base = f"pi-no:{rig}.BOP.CBM"
+else:
+    vol_ext = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
+    active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
+    pressure_base = f"pi-no:{rig}.BOP.DCP"    
 
-pressure_base = f"pi-no:{rig}.BOP.DCP"
 pressure_map = {
     **{v: f"{pressure_base}.ScaledValue{n}" for v, n in [
         ("Upper Annular", 12), ("Lower Annular", 14),
@@ -132,10 +130,14 @@ if "df" in st.session_state:
             st.session_state.df, st.session_state.vol_df, plotly_template,
             oc_colors, flow_colors, flow_category_order, valve_order,
         )
-    else:
+    elif page == "Pods Overview":
         render_overview(
             st.session_state.df, st.session_state.vol_df, plotly_template,
             oc_colors, by_colors, flow_colors, flow_category_order,
+        )
+    elif page == "EDS Cycles":
+        render_eds_cycles(
+            rig, start_date, end_date, valve_map, simple_map, vol_ext=vol_ext
         )
 else:
     st.info("Please click **Load Data** in the sidebar to get started.")

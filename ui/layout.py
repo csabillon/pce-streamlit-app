@@ -6,7 +6,7 @@ def render_sidebar(default_rig: str | None = None):
     default_start = today - timedelta(days=60)
     default_end = today
 
-    rigs = ["TransoceanDPS", "TransoceanDTH", "TransoceanDPT"]
+    rigs = ["TransoceanDPS", "TransoceanDTH", "TransoceanDPT", "Drillmax"]
     selectbox_key = "sidebar_selected_rig"
 
     # Do NOT directly assign session state here to avoid widget warning
