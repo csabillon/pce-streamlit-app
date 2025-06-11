@@ -197,7 +197,7 @@ def plot_accumulator(vol_df, template="plotly"):
     interval = f"{max(int(dur / max_pts), 1)}s"
 
     fig.update_layout(
-        title=f"Accumulator Gallons Over Time ({interval})",
+        title=f"Accumulator Gallons Over Time",
         template=template,
         height=300,
         margin=SMALL_MARGIN,

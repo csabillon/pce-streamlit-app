@@ -7,6 +7,7 @@ from ui.page_dashboard import render_dashboard
 from ui.page_overview import render_overview
 from ui.page_eds_cycles import render_eds_cycles
 from utils.colors import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
+from utils.tag_mappings import get_rig_tags
 
 st.set_page_config(
     page_title="BOP Valve Dashboard",
@@ -69,41 +70,15 @@ by_colors = BY_COLORS
 flow_colors = FLOW_COLORS
 flow_category_order = FLOW_CATEGORY_ORDER
 
-# Valve tag mappings
-_prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
-valve_map = {
-    "Upper Annular": _prefix + "1",
-    "Lower Annular": _prefix + "5",
-    "LMRP Connector": _prefix + "2",
-    "Upper Blind Shear": _prefix + "6",
-    "Casing Shear Ram": _prefix + "7",
-    "Lower Blind Shear": _prefix + "14",
-    "Upper Pipe Ram": _prefix + "8",
-    "Middle Pipe Ram": _prefix + "9",
-    "Lower Pipe Ram": _prefix + "10",
-    "Test Ram": _prefix + "74",
-    "Wellhead Connector": _prefix + "11",
-}
+# Get rig-specific tags from modular function
+tags = get_rig_tags(rig)
+valve_map = tags["valve_map"]
+vol_ext = tags["vol_ext"]
+active_pod_tag = tags["active_pod_tag"]
+pressure_map = tags["pressure_map"]
+eds_base_tag = tags["eds_base_tag"]
+
 valve_order = list(valve_map.keys())
-
-if rig == "Drillmax":
-    vol_ext = f"pi-no:{rig}.BOP.CBM.HPU_MAINACC_ACC_NoReset"
-    active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem"
-    pressure_base = f"pi-no:{rig}.BOP.CBM"
-else:
-    vol_ext = f"pi-no:{rig}.BOP.Div_Hpu.HPU_MAINACC_ACC_NONRST"
-    active_pod_tag = f"pi-no:{rig}.BOP.CBM.ActiveSem_CBM"
-    pressure_base = f"pi-no:{rig}.BOP.DCP"    
-
-pressure_map = {
-    **{v: f"{pressure_base}.ScaledValue{n}" for v, n in [
-        ("Upper Annular", 12), ("Lower Annular", 14),
-        ("Wellhead Connector", 20), ("LMRP Connector", 16),
-    ]},
-}
-default_press_tag = f"{pressure_base}.ScaledValue18"
-for v in valve_map:
-    pressure_map.setdefault(v, default_press_tag)
 
 simple_map = {
     256: "CLOSE", 257: "OPEN", 258: "CLOSE",
@@ -137,7 +112,12 @@ if "df" in st.session_state:
         )
     elif page == "EDS Cycles":
         render_eds_cycles(
-            rig, start_date, end_date, valve_map, simple_map, vol_ext=vol_ext
+            rig, start_date, end_date,
+            valve_map=valve_map,
+            simple_map=simple_map,
+            vol_ext=vol_ext,
+            active_pod_tag=active_pod_tag,
+            eds_base_tag=eds_base_tag,
         )
 else:
     st.info("Please click **Load Data** in the sidebar to get started.")

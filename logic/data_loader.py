@@ -1,8 +1,24 @@
 from config import *
-from cognite.client import CogniteClient
+from cognite.client import CogniteClient, ClientConfig
+from cognite.client.credentials import OAuthClientCredentials
 
-client = CogniteClient.default_oauth_client_credentials(
-    CDF_PROJECT, CDF_CLUSTER, CDF_TENANT_ID, CDF_CLIENT_ID, CDF_CLIENT_SECRET
+creds = OAuthClientCredentials(
+    token_url=AUTHORITY_HOST_URI,
+    client_id=CDF_CLIENT_ID,
+    client_secret=CDF_CLIENT_SECRET,
+    scopes=SCOPES
+)
+
+client_config = ClientConfig(
+    client_name="client",
+    project=CDF_PROJECT,
+    credentials=creds,
+    base_url=BASE_URL
+)
+
+
+client = CogniteClient(
+    client_config
 )
 
 def get_volume_df(external_id, start, end):

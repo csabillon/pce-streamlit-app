@@ -40,7 +40,7 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
         segment["delta"] = segment["accumulator"].diff()
         # use percentile as threshold
         thresh = segment["delta"].quantile(0.75)
-        ramp = segment[segment["delta"] > thresh]
+        ramp = segment #segment[segment["delta"] > thresh]
         if ramp.empty:
             continue
 

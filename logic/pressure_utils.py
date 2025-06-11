@@ -1,5 +1,3 @@
-# logic/pressure_utils.py
-
 import numpy as np
 import pandas as pd
 
@@ -17,6 +15,7 @@ def assign_max_pressure_vectorized(
     of pressure readings in that slice.
     Returns an array of the same length as events_df with that “top‑20% average” for each event.
     """
+
     # Ensure timestamps are datetime
     ts = pd.to_datetime(events_df["timestamp"])
 
@@ -32,21 +31,24 @@ def assign_max_pressure_vectorized(
 
     for i, (t, pre, post) in enumerate(zip(ts, pre_offsets, post_offsets)):
         window_slice = pressure_series.loc[t - pre : t + post].dropna()
-        if window_slice.empty:
+
+        # Safely convert to numeric numpy array, ignoring errors by coercing to nan then dropping
+        arr = pd.to_numeric(window_slice, errors='coerce').dropna().values
+
+        if arr.size == 0:
             continue
 
-        arr = window_slice.values
         # if fewer than 5 points, just average them all
         if len(arr) < 5:
-            out[i] = arr.mean()
+            out[i] = np.mean(arr)
         else:
             # compute 75th percentile threshold
             thr = np.percentile(arr, 75)
             top_vals = arr[arr >= thr]
             # in edge cases where >=thr yields empty (due to duplicates), fall back to max
             if top_vals.size:
-                out[i] = top_vals.mean()
+                out[i] = np.mean(top_vals)
             else:
-                out[i] = arr.max()
+                out[i] = np.max(arr)
 
     return out

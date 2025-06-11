@@ -41,7 +41,7 @@ def generate_details_table(df: pd.DataFrame) -> pd.DataFrame:
         "Start (gal)",
         "End (gal)",
         "Δ (gal)",
-        "Event Duration (min)",
+        "Duration (min)",
         "Flow Rate (gpm)",
         "Max Pressure",
         "Active Pod",
