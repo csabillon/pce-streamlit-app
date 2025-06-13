@@ -8,9 +8,8 @@ from plotly.subplots import make_subplots
 from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 # Sizes for the small pies / bars
-PIE_SIZE = 300
-BAR_SIZE = 300
-
+PIE_SIZE = 250
+BAR_SIZE = 250
 # Shared margin
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 
@@ -199,7 +198,7 @@ def plot_accumulator(vol_df, template="plotly"):
     fig.update_layout(
         title=f"Accumulator Gallons Over Time",
         template=template,
-        height=300,
+        height=250,
         margin=SMALL_MARGIN,
     )
     return fig
@@ -233,5 +232,5 @@ def plot_time_series(sub_df, template="plotly", oc_colors=None):
             row=2, col=1,
         )
 
-    fig.update_layout(height=300, template=template, margin=SMALL_MARGIN)
+    fig.update_layout(height=250, template=template, margin=SMALL_MARGIN)
     return fig

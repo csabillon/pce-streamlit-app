@@ -21,7 +21,6 @@ def render_dashboard(
     flow_category_order: list[str],
     valve_order: list[str],
 ):
-    # Add "Composite" alongside each pod
     pod_names = ["Composite", "Blue Pod", "Yellow Pod"]
 
     tabs = st.tabs(pod_names)
@@ -74,7 +73,7 @@ def render_dashboard(
             c4.plotly_chart(bc, use_container_width=True, key=f"{pod_name}_bar_close")
 
             # Row 2: Boxplots
-            st.markdown("---")
+            #st.markdown("---")
             b1, b2, b3, b4 = st.columns(4)
             bd_o, bd_c = plot_boxplots(sub, flow_colors, plotly_template)
             bp_o, bp_c = plot_pressure_boxplots(sub, flow_colors, plotly_template)
@@ -84,7 +83,7 @@ def render_dashboard(
             b4.plotly_chart(bp_c, use_container_width=True, key=f"{pod_name}_bp_close")
 
             # Row 3: Scatter by Flow Category
-            st.markdown("---")
+           # st.markdown("---")
             s1, s2, s3, s4 = st.columns(4)
             scatter_figs = plot_scatter_by_flowcategory(
                 sub, flow_colors, flow_category_order, plotly_template
@@ -95,13 +94,13 @@ def render_dashboard(
             s4.plotly_chart(scatter_figs[3], use_container_width=True, key=f"{pod_name}_d_close")
 
             # Time Series
-            st.markdown("---")
+            #st.markdown("---")
             st.subheader("Pressure and Flow Over Time")
             ts_fig = plot_time_series(sub, plotly_template, oc_colors)
             st.plotly_chart(ts_fig, use_container_width=True, key=f"{pod_name}_time")
 
             # Accumulator
-            st.markdown("---")
+            #st.markdown("---")
             st.subheader("Accumulator Totalizer")
             fig_acc = plot_accumulator(vol_df, plotly_template)
             st.plotly_chart(fig_acc, use_container_width=True, key=f"{pod_name}_acc")
