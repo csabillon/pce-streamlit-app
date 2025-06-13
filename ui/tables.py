@@ -1,10 +1,8 @@
+# ui/tables.py
+
 import pandas as pd
 
 def generate_statistics_table(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aggregated summary by valve, state, and Active Pod,
-    now including the total depletion percent per group.
-    """
     agg_dict = {
         "Count":                 ("Δ (gal)",         "count"),
         "Avg Δ (gal)":           ("Δ (gal)",         "mean"),
@@ -17,7 +15,6 @@ def generate_statistics_table(df: pd.DataFrame) -> pd.DataFrame:
         "Avg Flow (gpm)":        ("Flow Rate (gpm)", "mean"),
         "Total Depletion (%)":   ("Depletion (%)",   "sum"),
     }
-
     return (
         df
         .groupby(["valve", "state", "Active Pod"])
@@ -27,10 +24,6 @@ def generate_statistics_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 def generate_details_table(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Row‑level detail table.
-    Includes the precomputed Flow Category and Depletion (%).
-    """
     cols = [
         "timestamp",
         "valve",

@@ -1,13 +1,14 @@
+# logic/dashboard_data.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import timedelta
 
-from logic.data_loader    import get_volume_df, get_valve_df, get_pressure_df, get_raw_df
-from logic.helpers        import to_ms, classify_flow
-from logic.processing     import compute_transitions, extract_ramp
-from logic.pressure_utils import assign_max_pressure_vectorized
-from logic.depletion      import load_and_preprocess
+from logic.data_loaders    import get_volume_df, get_valve_df, get_pressure_df, get_raw_df
+from logic.preprocessing   import to_ms, classify_flow, compute_transitions, extract_ramp
+from logic.pressure        import assign_max_pressure_vectorized
+from logic.depletion       import load_and_preprocess
 
 def _map_active_pod(value: float) -> str:
     if value in (1, 2):
@@ -36,8 +37,6 @@ def fill_minute_gaps_with_ffill(df, value_col="accumulator"):
 
     return combined
 
-
-
 @st.cache_data(
     ttl=24 * 3600,             # cache for 24 hours
     show_spinner="Loading dashboard…"
@@ -63,13 +62,12 @@ def load_dashboard_data(
     vol_df = get_volume_df(vol_ext, sm, em)
     vol_df = fill_minute_gaps_with_ffill(vol_df, value_col="accumulator")
 
-
     valve_list = get_valve_df(valve_map, simple_map, sm, em)
     valve_df = pd.concat(valve_list).sort_index()
     trans = compute_transitions(valve_df)
     df = extract_ramp(trans, vol_df, valve_class, category_windows)
 
-    # 3) Flow Category
+    # 3) Flow Category (temporary; will be overwritten by load_and_preprocess below)
     df["Flow Category"] = pd.Categorical(
         df.apply(
             lambda r: classify_flow(
@@ -155,7 +153,6 @@ def load_dashboard_data(
 
     return df, vol_annot
 
-
 def get_timeseries_data(tag, start_date, end_date):
     """
     Universal function for retrieving timeseries data by tag and date.
@@ -165,15 +162,14 @@ def get_timeseries_data(tag, start_date, end_date):
     sm = to_ms(start_date)
     em = to_ms(end_date + timedelta(days=1)) - 1
 
-    # Use get_raw_df for any tag
     df = get_raw_df(tag, sm, em)
 
     # Standardize output
     if not df.empty:
-        # Try to ensure a 'timestamp' column
+        # Ensure 'timestamp' column
         if 'timestamp' not in df.columns:
             df = df.reset_index().rename(columns={df.index.name or 'index': 'timestamp'})
-        # Try to ensure a 'value' column
+        # Ensure 'value' column
         if 'value' not in df.columns:
             value_cols = [col for col in df.columns if col not in ('timestamp', 'index')]
             if value_cols:

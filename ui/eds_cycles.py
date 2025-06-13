@@ -1,3 +1,5 @@
+# ui/page_eds_cycles.py
+
 import streamlit as st
 import pandas as pd
 from logic.dashboard_data import get_timeseries_data

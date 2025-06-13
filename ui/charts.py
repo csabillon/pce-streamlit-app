@@ -4,13 +4,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from logic.preprocessing import downsample_for_display
 
 from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
-# Sizes for the small pies / bars
 PIE_SIZE = 250
 BAR_SIZE = 250
-# Shared margin
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 
 
@@ -172,9 +171,12 @@ def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template)
     )
 
 
+
 def plot_accumulator(vol_df, template="plotly"):
-    """Plot accumulator gallons over time as lines, colored by Active Pod."""
+    """Plot accumulator gallons over time as lines, colored by Active Pod, DOWNSAMPLED for display."""
     df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
+    # Downsample ONLY for visualization; calculations use full data!
+    df = downsample_for_display(df, target_points=4000)
     df["segment"] = (df["Active Pod"] != df["Active Pod"].shift()).cumsum()
     pod_colors = BY_COLORS
 
@@ -191,15 +193,11 @@ def plot_accumulator(vol_df, template="plotly"):
             )
         )
 
-    max_pts = 20000
-    dur     = (vol_df.index[-1] - vol_df.index[0]).total_seconds()
-    interval = f"{max(int(dur / max_pts), 1)}s"
-
     fig.update_layout(
         title=f"Accumulator Gallons Over Time",
         template=template,
         height=250,
-        margin=SMALL_MARGIN,
+        margin=dict(l=20, r=20, t=40, b=20),
     )
     return fig
 

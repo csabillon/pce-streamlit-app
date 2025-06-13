@@ -1,4 +1,4 @@
-# logic/tag_mappings.py
+# logic/tag_maps.py
 
 def get_rig_tags(rig):
     if rig == "Drillmax":

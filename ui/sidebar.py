@@ -1,3 +1,5 @@
+# ui/sidebar.py
+
 import streamlit as st
 from datetime import datetime, timedelta
 
@@ -6,24 +8,16 @@ def render_sidebar(default_rig: str | None = None):
     default_start = today - timedelta(days=60)
     default_end = today
 
-    # Original rig list (long names)
     rigs = ["TransoceanDPS", "TransoceanDTH", "TransoceanDPT", "Drillmax"]
-
-    # Scrambled display names, same order as rigs
     rig_labels = ["Doom", "Thanos", "Venom", "Drillmax"]
-
-    # Map default rig long name to index for default selection in sidebar
     default_index = rigs.index(default_rig) if default_rig in rigs else 0
 
-    # Show scrambled rig names in selectbox
     selected_label = st.sidebar.selectbox(
         "Select Rig",
         rig_labels,
         index=default_index,
         key="sidebar_selected_rig"
     )
-
-    # Map selected label back to long rig name to use internally
     rig = rigs[rig_labels.index(selected_label)]
 
     start_date = st.sidebar.date_input("Start Date", default_start)

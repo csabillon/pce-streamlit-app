@@ -1,3 +1,5 @@
+# logic/preprocessing.py
+
 import pandas as pd
 
 def compute_transitions(valve_df):
@@ -65,3 +67,31 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
         used.append((t0, t1))
 
     return pd.DataFrame(rows)
+
+def to_ms(dt):
+    return int(pd.Timestamp(dt).timestamp() * 1000)
+
+def classify_flow(delta_gal, valve_class, flow_thresholds):
+    low, high = flow_thresholds.get(valve_class, (float("inf"), float("inf")))
+    if delta_gal <= low:
+        return "Low"
+    elif delta_gal <= high:
+        return "Mid"
+    else:
+        return "High"
+
+def downsample_for_display(df, target_points=4000, method="nth"):
+    """
+    Downsample a DataFrame for display. Only affects visualization.
+    - method='nth': take every Nth row to fit target_points.
+    - method='resample': if index is DatetimeIndex, resample by 1min.
+    """
+    if len(df) <= target_points:
+        return df
+    if method == "nth":
+        step = max(1, len(df) // target_points)
+        return df.iloc[::step]
+    elif method == "resample" and isinstance(df.index, pd.DatetimeIndex):
+        return df.resample('1T').mean()
+    else:
+        return df

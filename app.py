@@ -1,13 +1,15 @@
+# app.py
+
 import streamlit as st
 from utils.themes import get_plotly_template
-from ui.layout import render_sidebar
+from ui.sidebar import render_sidebar
 from logic.dashboard_data import load_dashboard_data
 from logic.depletion import VALVE_CLASS_MAP, FLOW_THRESHOLDS
-from ui.page_dashboard import render_dashboard
-from ui.page_overview import render_overview
-from ui.page_eds_cycles import render_eds_cycles
+from ui.dashboard import render_dashboard
+from ui.overview import render_overview
+from ui.eds_cycles import render_eds_cycles
 from utils.colors import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
-from utils.tag_mappings import get_rig_tags
+from logic.tag_maps import get_rig_tags
 
 st.set_page_config(
     page_title="BOP Valve Dashboard",
@@ -33,15 +35,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# URL Params
 params = st.query_params
-requested_rig = params.get("rig", None)
-requested_page = params.get("page", None)
-requested_theme = params.get("theme", None)
-
-requested_rig = requested_rig if requested_rig else None
-requested_page = requested_page if requested_page else None
-requested_theme = requested_theme if requested_theme else None
+requested_rig = params.get("rig")
+requested_page = params.get("page")
+requested_theme = params.get("theme")
 
 if requested_theme in ("dark", "light"):
     st._config.set_option("theme.base", requested_theme)
@@ -56,21 +53,17 @@ rig_map = {
 }
 default_rig = rig_map.get(requested_rig, None)
 
-# Sidebar
 rig, start_date, end_date, category_windows = render_sidebar(default_rig)
 
-# Page selection
 all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles"]
 page_index = all_pages.index(requested_page) if requested_page in all_pages else 0
 page = st.sidebar.radio("Select Page", all_pages, index=page_index)
 
-# Colors
 oc_colors = OC_COLORS
 by_colors = BY_COLORS
 flow_colors = FLOW_COLORS
 flow_category_order = FLOW_CATEGORY_ORDER
 
-# Get rig-specific tags from modular function
 tags = get_rig_tags(rig)
 valve_map = tags["valve_map"]
 vol_ext = tags["vol_ext"]
@@ -88,26 +81,32 @@ simple_map = {
     1028: "CLOSE", 4096: "ERROR",
 }
 
-# Data loading without spinner
-if st.sidebar.button("Load Data") or "df" not in st.session_state:
+# Smarter caching: reloads if ANY of these parameters change (including embedded links)
+data_key = f"{rig}_{start_date}_{end_date}"
+if st.sidebar.button("Reload Data"):
+    if data_key in st.session_state:
+        del st.session_state[data_key]
+
+if data_key not in st.session_state:
     df, vol_df = load_dashboard_data(
         rig, start_date, end_date, category_windows, valve_map,
         simple_map, VALVE_CLASS_MAP, vol_ext, pressure_map,
         active_pod_tag, FLOW_THRESHOLDS
     )
-    st.session_state.df = df
-    st.session_state.vol_df = vol_df
+    st.session_state[data_key] = (df, vol_df)
+else:
+    df, vol_df = st.session_state[data_key]
 
-# Render
-if "df" in st.session_state:
+if df is not None and vol_df is not None:
     if page == "Valve Analytics":
+        # FILTERING: only pass filtered (by valve, etc) to each plotting function inside render_dashboard
         render_dashboard(
-            st.session_state.df, st.session_state.vol_df, plotly_template,
+            df, vol_df, plotly_template,
             oc_colors, flow_colors, flow_category_order, valve_order,
         )
     elif page == "Pods Overview":
         render_overview(
-            st.session_state.df, st.session_state.vol_df, plotly_template,
+            df, vol_df, plotly_template,
             oc_colors, by_colors, flow_colors, flow_category_order,
         )
     elif page == "EDS Cycles":
