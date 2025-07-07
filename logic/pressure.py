@@ -39,3 +39,55 @@ def assign_max_pressure_vectorized(
             top_vals = arr[arr >= thr]
             out[i] = np.mean(top_vals) if top_vals.size else np.max(arr)
     return out
+
+
+def assign_max_well_pressure(
+    events_df: pd.DataFrame,
+    well_pressure_series: pd.Series,
+    valve_class: dict,
+    category_windows: dict,
+) -> np.ndarray:
+    """
+    For each event, calculates the max well pressure within a window:
+      - "OPEN": [t - 0.8W, t + 2W]
+      - "CLOSE": [t - 0.8W, next OPEN event for same valve] (or end of well_pressure_series)
+    Returns an array of same length as events_df.
+    """
+    ts = pd.to_datetime(events_df["timestamp"])
+    states = events_df["state"].values
+    valves = events_df["valve"].values
+    n = len(events_df)
+    out = np.full(n, np.nan)
+
+    for i in range(n):
+        state = states[i]
+        t = ts[i]
+        valve = valves[i]
+        w = pd.Timedelta(seconds=category_windows[valve_class[valve]])
+        pre = 0.8 * w
+
+        if state == "OPEN":
+            post = 2.0 * w
+            start = t - pre
+            end = t + post
+        else:  # "CLOSE"
+            start = t - pre
+            # Find the next "OPEN" event for this valve
+            mask = (valves == valve) & (ts > t) & (states == "OPEN")
+            if mask.any():
+                next_open_time = ts[mask].min()
+                end = next_open_time
+            else:
+                end = well_pressure_series.index.max()  # till end of data
+
+        window_slice = well_pressure_series.loc[start:end].dropna()
+        arr = pd.to_numeric(window_slice, errors='coerce').dropna().values
+        if arr.size == 0:
+            continue
+        if len(arr) < 5:
+            out[i] = np.mean(arr)
+        else:
+            thr = np.percentile(arr, 75)
+            top_vals = arr[arr >= thr]
+            out[i] = np.mean(top_vals) if top_vals.size else np.max(arr)
+    return out

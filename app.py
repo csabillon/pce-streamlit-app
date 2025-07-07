@@ -1,5 +1,8 @@
 # app.py
 
+from cognite.client.config import global_config
+
+
 import streamlit as st
 from utils.themes import get_plotly_template
 from ui.sidebar import render_sidebar
@@ -8,8 +11,12 @@ from logic.depletion import VALVE_CLASS_MAP, FLOW_THRESHOLDS
 from ui.dashboard import render_dashboard
 from ui.overview import render_overview
 from ui.eds_cycles import render_eds_cycles
+from ui.pressure_cycles import render_pressure_cycles
 from utils.colors import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 from logic.tag_maps import get_rig_tags
+from logic.data_loaders import get_pressure_df
+from logic.preprocessing import to_ms
+from datetime import timedelta
 
 st.set_page_config(
     page_title="BOP Valve Dashboard",
@@ -37,7 +44,6 @@ st.markdown("""
 
 params = st.query_params
 requested_rig = params.get("rig")
-requested_page = params.get("page")
 requested_theme = params.get("theme")
 
 if requested_theme in ("dark", "light"):
@@ -53,11 +59,8 @@ rig_map = {
 }
 default_rig = rig_map.get(requested_rig, None)
 
-rig, start_date, end_date, category_windows = render_sidebar(default_rig)
-
-all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles"]
-page_index = all_pages.index(requested_page) if requested_page in all_pages else 0
-page = st.sidebar.radio("Select Page", all_pages, index=page_index)
+# Updated: get page from sidebar!
+rig, start_date, end_date, category_windows, page = render_sidebar(default_rig)
 
 oc_colors = OC_COLORS
 by_colors = BY_COLORS
@@ -99,7 +102,6 @@ else:
 
 if df is not None and vol_df is not None:
     if page == "Valve Analytics":
-        # FILTERING: only pass filtered (by valve, etc) to each plotting function inside render_dashboard
         render_dashboard(
             df, vol_df, plotly_template,
             oc_colors, flow_colors, flow_category_order, valve_order,
@@ -118,5 +120,22 @@ if df is not None and vol_df is not None:
             active_pod_tag=active_pod_tag,
             eds_base_tag=eds_base_tag,
         )
+    elif page == "Pressure Cycles":
+        # ----------- Well Pressure Extraction -----------
+        sm = to_ms(start_date)
+        em = to_ms(end_date + timedelta(days=1)) - 1
+        well_pressure_series = None
+        for p_df in get_pressure_df(pressure_map, sm, em):
+            valve_name = p_df["valve"].iat[0]
+            if valve_name == "Well Pressure":
+                well_pressure_series = p_df.set_index(p_df.index)["pressure"].sort_index()
+                break
+        # -----------------------------------------------
+        if well_pressure_series is not None:
+            render_pressure_cycles(
+                df, valve_map, well_pressure_series
+            )
+        else:
+            st.warning("No well pressure data available for analysis.")
 else:
     st.info("Please click **Load Data** in the sidebar to get started.")

@@ -20,6 +20,10 @@ def render_sidebar(default_rig: str | None = None):
     )
     rig = rigs[rig_labels.index(selected_label)]
 
+    # Add page selector to sidebar
+    all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles", "Pressure Cycles"]
+    page = st.sidebar.radio("Select Page", all_pages, key="sidebar_page")
+
     start_date = st.sidebar.date_input("Start Date", default_start)
     end_date = st.sidebar.date_input("End Date", default_end)
 
@@ -35,4 +39,5 @@ def render_sidebar(default_rig: str | None = None):
     if end_date < start_date:
         st.sidebar.error("End Date must be on or after Start Date")
 
-    return rig, start_date, end_date, category_windows
+    # Return the selected page as well!
+    return rig, start_date, end_date, category_windows, page

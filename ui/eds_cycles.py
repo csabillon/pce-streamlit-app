@@ -1,4 +1,4 @@
-# ui/page_eds_cycles.py
+# ui/eds_cycles.py
 
 import streamlit as st
 import pandas as pd

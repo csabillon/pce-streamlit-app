@@ -1,5 +1,4 @@
 # logic/tag_maps.py
-
 def get_rig_tags(rig):
     if rig == "Drillmax":
         _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
@@ -27,7 +26,8 @@ def get_rig_tags(rig):
             ]},
         }
         default_press_tag = f"{pressure_base}.ScaledValue11"
-
+        # Drillmax Well Pressure is ScaledValue12
+        pressure_map["Well Pressure"] = f"{pressure_base}.ScaledValue12"
     else:
         _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
         valve_map = {
@@ -54,6 +54,8 @@ def get_rig_tags(rig):
             ]},
         }
         default_press_tag = f"{pressure_base}.ScaledValue18"
+        # Other rigs Well Pressure is ScaledValue48
+        pressure_map["Well Pressure"] = f"{pressure_base}.ScaledValue48"
 
     for v in valve_map:
         pressure_map.setdefault(v, default_press_tag)
