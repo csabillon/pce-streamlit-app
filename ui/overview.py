@@ -14,7 +14,7 @@ def render_overview(
     plotly_template: str,
     oc_colors: dict,
     by_colors: dict,      
-    flow_colors: dict,         
+    flow_colors: dict,
     flow_category_order: list,  
 ):
     st.header("Pods Overview")

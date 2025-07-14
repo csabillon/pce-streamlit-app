@@ -5,14 +5,18 @@ import pandas as pd
 def compute_transitions(valve_df):
     valve_df = valve_df.reset_index().rename(columns={"index": "timestamp"})
     valve_df["prev_state"] = valve_df.groupby("valve")["state"].shift(1)
+    # Keep function_state and status_code for each transition
+    valve_df["function_state"] = valve_df["function_state"]
+    valve_df["prev_function_state"] = valve_df.groupby("valve")["function_state"].shift(1)
+    valve_df["status_code"] = valve_df["status_code"]
     return valve_df[valve_df["state"] != valve_df["prev_state"]].dropna()
 
-def extract_ramp(transitions, vol_df, valve_class, category_windows):
+def extract_ramp(transitions, vol_df, valve_class, category_windows, valve_df=None):
     """
     For each valve transition, look in a total window W around the event (80% before, 20% after),
     find the “ramp” portion (delta > 80th percentile), and record:
       - timestamp (event time)
-      - valve, prev_state, state
+      - valve, prev_state, state, function_state, prev_function_state, status_code
       - Start Time / End Time (exact timestamps of accumulator start/end)
       - Start (gal), End (gal), Δ (gal)
     Skips any event whose [t0, t1] overlaps one already used.
@@ -46,6 +50,11 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
         if ramp.empty:
             continue
 
+        # Get the function_state and status_code from the transition row
+        function_state = row.get("function_state")
+        prev_function_state = row.get("prev_function_state")
+        status_code = row.get("status_code")
+
         # exact start/end timestamps & values
         start_ts = ramp.index[0]
         end_ts   = ramp.index[-1]
@@ -58,6 +67,9 @@ def extract_ramp(transitions, vol_df, valve_class, category_windows):
             "valve":        valve,
             "prev_state":   row["prev_state"],
             "state":        row["state"],
+            "function_state": function_state,
+            "prev_function_state": prev_function_state,
+            "status_code":  status_code,
             "Start Time":   start_ts,
             "End Time":     end_ts,
             "Start (gal)":  start_val,

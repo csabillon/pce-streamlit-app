@@ -1,4 +1,5 @@
 # ui/tables.py
+
 import pandas as pd
 
 def generate_statistics_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -19,7 +20,7 @@ def generate_statistics_table(df: pd.DataFrame) -> pd.DataFrame:
     }
     return (
         df
-        .groupby(["valve", "state", "Active Pod"])
+        .groupby(["valve", "state", "Active Pod", "function_state"])
         .agg(**agg_dict)
         .round(2)
         .reset_index()
@@ -31,6 +32,9 @@ def generate_details_table(df: pd.DataFrame) -> pd.DataFrame:
         "valve",
         "prev_state",
         "state",
+        "function_state",
+        "prev_function_state",
+        "status_code",
         "Start Time",
         "End Time",
         "Start (gal)",
@@ -44,4 +48,5 @@ def generate_details_table(df: pd.DataFrame) -> pd.DataFrame:
         "Flow Category",
         "Depletion (%)",
     ]
-    return df[cols]
+    display_cols = [c for c in cols if c in df.columns]
+    return df[display_cols]

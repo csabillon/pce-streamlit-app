@@ -25,9 +25,9 @@ def get_eds_triggers_and_valve_events(
     for ch in EDS_CHANNELS:
         # Build eds_tag depending on rig:
         if rig == "Drillmax":
-            eds_tag = f"{eds_base_tag}{ch}EDSProgress"  # e.g. pi-no:Drillmax.BOP.CBM.BaEDSProgress
+            eds_tag = f"{eds_base_tag}{ch}EDSProgress"
         else:
-            eds_tag = f"{eds_base_tag}{ch}.{ch}EDSProgress"  # e.g. pi-no:OtherRig.BOP.SEM_Ba.BaEDSProgress
+            eds_tag = f"{eds_base_tag}{ch}.{ch}EDSProgress"
         
         prog_df = get_timeseries_data(eds_tag, start, end)
         if prog_df.empty:
@@ -101,13 +101,15 @@ def get_eds_triggers_and_valve_events(
                 seconds_after = (event_time - this_time).total_seconds()
                 if 0 <= seconds_after < (window_end - this_time).total_seconds():
                     event_type = simple_map.get(int(vrow['value']), "OTHER")
+                    status_code = int(vrow['value']) if 'value' in vrow else None
                     all_valve_events.append({
                         "EDS Command Time": this_time,
                         "EDS Command Value": row["EDS Command Value"],
                         "Valve Name": valve_name,
                         "Valve Event": event_type,
                         "Valve Event Time": event_time,
-                        "Seconds After Command": int(seconds_after)
+                        "Seconds After Command": int(seconds_after),
+                        "Status Code": status_code
                     })
 
     # Update triggers_df with computed volumes
@@ -115,7 +117,6 @@ def get_eds_triggers_and_valve_events(
 
     valve_events_df = pd.DataFrame(all_valve_events)
     return triggers_df, valve_events_df
-
 
 def render_eds_cycles(
     rig, start_date, end_date,
@@ -174,7 +175,8 @@ def render_eds_cycles(
                     "Valve Name",
                     "Valve Event",
                     "Valve Event Time",
-                    "Seconds After Command"
+                    "Seconds After Command",
+                    "Status Code"
                 ]
             ],
             use_container_width=True,

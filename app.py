@@ -2,7 +2,6 @@
 
 from cognite.client.config import global_config
 
-
 import streamlit as st
 from utils.themes import get_plotly_template
 from ui.sidebar import render_sidebar
@@ -76,12 +75,18 @@ eds_base_tag = tags["eds_base_tag"]
 
 valve_order = list(valve_map.keys())
 
+# Update here: Use your new simple/function maps
 simple_map = {
-    256: "CLOSE", 257: "OPEN", 258: "CLOSE",
-    512: "CLOSE", 513: "OPEN", 514: "CLOSE",
-    515: "OPEN", 516: "CLOSE", 1024: "CLOSE",
-    1025: "OPEN", 1026: "CLOSE", 1027: "OPEN",
-    1028: "CLOSE", 4096: "ERROR",
+    256: "VENT",
+    513: "OPEN", 514: "CLOSE", 515: "OPEN VENT", 516: "CLOSE VENT",
+    1025: "OPEN", 1026: "CLOSE", 1027: "OPEN VENT", 1028: "CLOSE VENT",
+    4096: "ERROR",
+}
+function_map = {
+    256: "VENT",
+    513: "OPEN", 514: "CLOSE", 515: "OPEN VENT", 516: "CLOSE VENT",
+    1025: "OPEN", 1026: "CLOSE", 1027: "OPEN VENT", 1028: "CLOSE VENT",
+    4096: "ERROR",
 }
 
 # Smarter caching: reloads if ANY of these parameters change (including embedded links)
@@ -93,7 +98,7 @@ if st.sidebar.button("Reload Data"):
 if data_key not in st.session_state:
     df, vol_df = load_dashboard_data(
         rig, start_date, end_date, category_windows, valve_map,
-        simple_map, VALVE_CLASS_MAP, vol_ext, pressure_map,
+        simple_map, function_map, VALVE_CLASS_MAP, vol_ext, pressure_map,
         active_pod_tag, FLOW_THRESHOLDS
     )
     st.session_state[data_key] = (df, vol_df)

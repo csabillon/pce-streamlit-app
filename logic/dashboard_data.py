@@ -1,4 +1,5 @@
 # logic/dashboard_data.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,7 +20,6 @@ def _map_active_pod(value: float) -> str:
 def fill_minute_gaps_with_ffill(df, value_col="accumulator"):
     df = df.copy()
     df.index = pd.to_datetime(df.index)
-
     full_minute_index = pd.date_range(
         start=df.index.min().floor('min'),
         end=df.index.max().ceil('min'),
@@ -41,6 +41,7 @@ def load_dashboard_data(
     category_windows,
     valve_map,
     simple_map,
+    function_map,
     valve_class,
     vol_ext,
     pressure_map,
@@ -53,10 +54,14 @@ def load_dashboard_data(
     vol_df = get_volume_df(vol_ext, sm, em)
     vol_df = fill_minute_gaps_with_ffill(vol_df, value_col="accumulator")
 
-    valve_list = get_valve_df(valve_map, simple_map, sm, em)
+    valve_list = get_valve_df(valve_map, simple_map, function_map, sm, em)
     valve_df = pd.concat(valve_list).sort_index()
+
+    # Compute transitions as usual (simple_map)
     trans = compute_transitions(valve_df)
-    df = extract_ramp(trans, vol_df, valve_class, category_windows)
+
+    # Pass full valve_df (including function_state) for function_state lookup during ramp extraction
+    df = extract_ramp(trans, vol_df, valve_class, category_windows, valve_df=valve_df)
 
     df["Flow Category"] = pd.Categorical(
         df.apply(

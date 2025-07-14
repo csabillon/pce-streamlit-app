@@ -31,17 +31,19 @@ def get_volume_df(external_id, start, end):
     return df
 
 # ---- Parallel Valve Fetch ----
-def _fetch_valve(name, ext, simple_map, start, end):
+def _fetch_valve(name, ext, simple_map, function_map, start, end):
     df = client.time_series.data.retrieve_dataframe(external_id=ext, start=start, end=end)
     df = df.rename(columns={df.columns[0]: "status_code"})
     df["state"] = df["status_code"].map(simple_map)
+    df["function_state"] = df["status_code"].map(function_map)
     df["valve"] = name
-    return df.dropna(subset=["state"])[["state", "valve"]]
+    # Drop rows without valid state for transitions, but keep function_state for all
+    return df.dropna(subset=["state"])[["state", "function_state", "valve", "status_code"]]
 
-def get_valve_df(valve_map, simple_map, start, end, max_workers=6):
+def get_valve_df(valve_map, simple_map, function_map, start, end, max_workers=6):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_fetch_valve, name, ext, simple_map, start, end)
+            executor.submit(_fetch_valve, name, ext, simple_map, function_map, start, end)
             for name, ext in valve_map.items()
         ]
         results = [f.result() for f in futures]
