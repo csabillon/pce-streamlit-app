@@ -1,5 +1,3 @@
-# ui/overview.py
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -7,6 +5,35 @@ import plotly.express as px
 PIE_SIZE     = 300
 BOX_SIZE     = 300
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
+
+# Helper for correct state/label for connectors
+CONNECTOR_VALVES = {"LMRP Connector", "Wellhead Connector"}
+
+def get_state_label(valve_name, state):
+    if valve_name in CONNECTOR_VALVES:
+        if state == "OPEN":
+            return "LATCH"
+        elif state == "CLOSE":
+            return "UNLATCH"
+        return state
+    else:
+        return state
+
+def get_legend_state(df):
+    """Return all unique legend labels to use for state color/legend ordering in boxplots."""
+    if "valve" not in df.columns or "state" not in df.columns:
+        return ["OPEN", "CLOSE"]
+    states = []
+    for _, row in df.iterrows():
+        label = get_state_label(row["valve"], row["state"])
+        if label not in states:
+            states.append(label)
+    # Always show in this order if present
+    order = []
+    for s in ["LATCH", "UNLATCH", "OPEN", "CLOSE"]:
+        if s in states:
+            order.append(s)
+    return order or ["OPEN", "CLOSE"]
 
 def render_overview(
     df: pd.DataFrame,
@@ -21,6 +48,12 @@ def render_overview(
 
     # ── Filter to Blue & Yellow ────────────────────────────────────────────
     df2 = df[df["Active Pod"].isin(["Blue Pod", "Yellow Pod"])].copy()
+
+    # Map states for connectors to LATCH/UNLATCH for color/legend
+    df2["Display State"] = [
+        get_state_label(row["valve"], row["state"])
+        for _, row in df2.iterrows()
+    ]
 
     # ── Prepare vol_df ────────────────────────────────────────────────────
     vol = vol_df.copy()
@@ -95,14 +128,15 @@ def render_overview(
     df2_cat = df2.assign(**{"Flow Category": pd.Categorical(
         df2["Flow Category"], categories=flow_category_order, ordered=True
     )})
+    legend_order = get_legend_state(df2_cat)
     with c3:
         fig = px.box(
-            df2_cat, x="Active Pod", y="Δ (gal)", color="state",
+            df2_cat, x="Active Pod", y="Δ (gal)", color="Display State",
             title="Δ (gal) Boxplot",
             template=plotly_template,
             category_orders={
                 "Active Pod": ["Blue Pod", "Yellow Pod"],
-                "state":      ["OPEN", "CLOSE"],
+                "Display State": legend_order,
             },
             color_discrete_map=oc_colors,
             height=BOX_SIZE, width=BOX_SIZE,
@@ -113,12 +147,12 @@ def render_overview(
     # Max Pressure Boxplot
     with c4:
         fig = px.box(
-            df2_cat, x="Active Pod", y="Max Pressure", color="state",
+            df2_cat, x="Active Pod", y="Max Pressure", color="Display State",
             title="Max Pressure Boxplot",
             template=plotly_template,
             category_orders={
                 "Active Pod": ["Blue Pod", "Yellow Pod"],
-                "state":      ["OPEN", "CLOSE"],
+                "Display State": legend_order,
             },
             color_discrete_map=oc_colors,
             height=BOX_SIZE, width=BOX_SIZE,

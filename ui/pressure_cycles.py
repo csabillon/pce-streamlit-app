@@ -1,17 +1,20 @@
-# ui/pressure_cycles.py
-# ---------------------
-
 import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from logic.pressure_cycles import analyze_pressure_cycles
+from ui_components.pressure_cycles_viz import (
+    plot_regulator_pressure_cycles, 
+    plot_well_pressure_cycles,
+    regulator_pressure_summary_table
+)
 
 def render_pressure_cycles(
     df,          
     valve_map, 
-    well_pressure_series
+    well_pressure_series,
+    pressure_series_by_valve,   # Dict[str, pd.Series]
 ):
     st.markdown("### Valve Pressure Cycles – Analysis")
 
@@ -37,7 +40,6 @@ def render_pressure_cycles(
 
     # --- Wet and Dry cycle counts per valve ---
     cycles_df["WetCycle"] = cycles_df["Max Well Pressure"] > WET_THRESHOLD
-
     wet_counts = cycles_df.groupby("Valve")["WetCycle"].sum().astype(int)
     dry_counts = cycles_df.groupby("Valve")["WetCycle"].apply(lambda x: (~x).sum()).astype(int)
     wet_dry_table = (
@@ -178,3 +180,52 @@ def render_pressure_cycles(
         hide_index=True,
         height=min(700, 48 + 35*len(cycles_df))
     )
+
+    # --- Per-Valve Pressure Cycles for Close Cycles above threshold ---
+    if not rare_cycles.empty:
+        st.markdown("#### Per-Cycle Pressure Trends for Close Cycles (Above Rarity Threshold)")
+        valve_options = sorted(rare_cycles["Valve"].unique())
+        selected_valve = st.selectbox(
+            "Select Valve for Close Cycle Pressure Traces",
+            valve_options,
+            key="pressure_cycle_valve"
+        )
+        valve_cycles = rare_cycles[rare_cycles["Valve"] == selected_valve]
+        regulator_pressure_series = pressure_series_by_valve.get(selected_valve)
+        
+        c1, c2 = st.columns(2)
+        # --- Regulator Pressure ---
+        with c1:
+            st.markdown("##### Regulator Pressure (Rare Close Cycles)")
+            if regulator_pressure_series is None or regulator_pressure_series.empty:
+                st.warning(f"No regulator pressure data for valve {selected_valve}.")
+            else:
+                fig = plot_regulator_pressure_cycles(valve_cycles, regulator_pressure_series)
+                st.plotly_chart(fig, use_container_width=True)
+                reg_table = regulator_pressure_summary_table(valve_cycles, regulator_pressure_series)
+                st.markdown("###### Regulator Pressure Table for Rare Cycles")
+                st.dataframe(reg_table, use_container_width=True, hide_index=True)
+                # Optional: Full trend for the selected valve
+                st.markdown("###### Full Regulator Pressure Trend (Selected Valve)")
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Scatter(
+                    x=regulator_pressure_series.index,
+                    y=regulator_pressure_series.values,
+                    mode="lines",
+                    name="Regulator Pressure",
+                    line=dict(width=2, color="mediumblue"),
+                ))
+                fig_trend.update_layout(
+                    xaxis_title="Timestamp",
+                    yaxis_title="Regulator Pressure (psi)",
+                    height=250,
+                    margin=dict(l=20, r=20, t=30, b=20),
+                )
+                st.plotly_chart(fig_trend, use_container_width=True)
+        # --- Well Pressure ---
+        with c2:
+            st.markdown("##### Well Pressure (Rare Close Cycles)")
+            fig_wp = plot_well_pressure_cycles(valve_cycles, well_pressure_series)
+            st.plotly_chart(fig_wp, use_container_width=True)
+    else:
+        st.info("No rare cycles to display regulator or well pressure data.")

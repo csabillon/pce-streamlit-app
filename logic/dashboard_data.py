@@ -57,11 +57,11 @@ def load_dashboard_data(
     valve_list = get_valve_df(valve_map, simple_map, function_map, sm, em)
     valve_df = pd.concat(valve_list).sort_index()
 
-    # Compute transitions as usual (simple_map)
+    # Compute transitions (now includes prev_function_state, prev_status_code, etc.)
     trans = compute_transitions(valve_df)
 
-    # Pass full valve_df (including function_state) for function_state lookup during ramp extraction
-    df = extract_ramp(trans, vol_df, valve_class, category_windows, valve_df=valve_df)
+    # No valve_df arg; all needed info is in transitions already
+    df = extract_ramp(trans, vol_df, valve_class, category_windows)
 
     df["Flow Category"] = pd.Categorical(
         df.apply(

@@ -1,21 +1,62 @@
-# ui/charts.py
+## ui_components/charts.py
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from logic.preprocessing import downsample_for_display
-
 from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 PIE_SIZE = 250
 BAR_SIZE = 250
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 
+# --- Helper for connectors ---
+CONNECTOR_VALVES = {"LMRP Connector", "Wellhead Connector"}
+
+def get_state_label(valve_name, state):
+    """Return user-friendly label for this state/valve combination."""
+    if valve_name in CONNECTOR_VALVES:
+        if state == "OPEN":
+            return "LATCH"
+        elif state == "CLOSE":
+            return "UNLATCH"
+        return state
+    else:
+        return state
+
+def get_state_filter(df, desired_state):
+    """Return a boolean mask for rows matching desired_state, accounting for connectors."""
+    if "valve" not in df.columns or "state" not in df.columns:
+        return pd.Series([False] * len(df), index=df.index)
+    mask = []
+    for _, row in df.iterrows():
+        val = row["valve"]
+        s = row["state"]
+        if val in CONNECTOR_VALVES:
+            # For connectors, "OPEN" means LATCH, "CLOSE" means UNLATCH
+            if desired_state == "OPEN" and s == "LATCH":
+                mask.append(True)
+            elif desired_state == "CLOSE" and s == "UNLATCH":
+                mask.append(True)
+            else:
+                mask.append(False)
+        else:
+            if s == desired_state:
+                mask.append(True)
+            else:
+                mask.append(False)
+    return pd.Series(mask, index=df.index)
+
+def get_chart_title(valve_name, state):
+    """Show only the relevant label: 'LATCH', 'UNLATCH', 'OPEN', 'CLOSE'."""
+    return get_state_label(valve_name, state)
 
 def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
-    """Returns: pie_open, bar_open, pie_close, bar_close"""
+    valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
     def make_pie_bar(subset, state):
+        if subset is None or subset.empty:
+            return go.Figure(), go.Figure()
         subset = subset.copy()
         subset["Flow Category"] = pd.Categorical(
             subset["Flow Category"],
@@ -29,12 +70,13 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
             .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
             .reset_index(name="Count")
         )
+        label = get_chart_title(valve_name, state)
         pie = px.pie(
             counts,
             names="Flow Category",
             values="Count",
             hole=0.5,
-            title=f"{state} – Utilization",
+            title=f"{label} – Utilization",
             color="Flow Category",
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color_discrete_map=flow_colors,
@@ -59,7 +101,7 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
             volume,
             x="Flow Category",
             y="Δ (gal)",
-            title=f"{state} – Δ (gal) Flow Volume",
+            title=f"{label} – Δ (gal) Flow Volume",
             color="Flow Category",
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color_discrete_map=flow_colors,
@@ -70,24 +112,26 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
 
         return pie, bar
 
-    open_sub  = df[df["state"] == "OPEN"]
-    close_sub = df[df["state"] == "CLOSE"]
+    open_sub  = df[get_state_filter(df, "OPEN")]
+    close_sub = df[get_state_filter(df, "CLOSE")]
     return make_pie_bar(open_sub, "OPEN") + make_pie_bar(close_sub, "CLOSE")
 
-
 def plot_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
-    """Δ (gal) boxplots for OPEN and CLOSE."""
+    valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
     d = df.copy()
     d["Flow Category"] = pd.Categorical(
         d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
     )
 
-    def mk_box(sub_df, title):
+    def mk_box(sub_df, state):
+        if sub_df is None or sub_df.empty:
+            return go.Figure()
+        label = get_chart_title(valve_name, state)
         fig = px.box(
             sub_df,
             x="Flow Category",
             y="Δ (gal)",
-            title=title,
+            title=f"{label} – Δ (gal) Boxplot",
             template=template,
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color="Flow Category",
@@ -99,24 +143,26 @@ def plot_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
         return fig
 
     return (
-        mk_box(d[d["state"] == "OPEN"],  "OPEN – Δ (gal) Boxplot"),
-        mk_box(d[d["state"] == "CLOSE"], "CLOSE – Δ (gal) Boxplot"),
+        mk_box(d[get_state_filter(d, "OPEN")],  "OPEN"),
+        mk_box(d[get_state_filter(d, "CLOSE")], "CLOSE"),
     )
 
-
 def plot_pressure_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
-    """Max Pressure boxplots for OPEN and CLOSE by flow category."""
+    valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
     d = df.copy()
     d["Flow Category"] = pd.Categorical(
         d["Flow Category"], categories=FLOW_CATEGORY_ORDER, ordered=True
     )
 
-    def mk_box(sub_df, title):
+    def mk_box(sub_df, state):
+        if sub_df is None or sub_df.empty:
+            return go.Figure()
+        label = get_chart_title(valve_name, state)
         fig = px.box(
             sub_df,
             x="Flow Category",
             y="Max Pressure",
-            title=title,
+            title=f"{label} – Pressure Boxplot",
             template=template,
             category_orders={"Flow Category": FLOW_CATEGORY_ORDER},
             color="Flow Category",
@@ -128,23 +174,21 @@ def plot_pressure_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
         return fig
 
     return (
-        mk_box(d[d["state"] == "OPEN"],  "OPEN – Pressure Boxplot"),
-        mk_box(d[d["state"] == "CLOSE"], "CLOSE – Pressure Boxplot"),
+        mk_box(d[get_state_filter(d, "OPEN")],  "OPEN"),
+        mk_box(d[get_state_filter(d, "CLOSE")], "CLOSE"),
     )
 
-
 def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template):
-    """
-    Four scatterplots (OPEN/CLOSE × FlowRate/Δ) colored by Flow Category,
-    each with a single overall OLS trendline in grey.
-    Returns (open_fr, open_delta, close_fr, close_delta).
-    """
-    def mk_trace(sub_df, x, y, title):
+    valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
+    def mk_trace(sub_df, x, y, state):
+        if sub_df is None or sub_df.empty:
+            return go.Figure()
+        label = get_chart_title(valve_name, state)
         fig = px.scatter(
             sub_df,
             x=x,
             y=y,
-            title=title,
+            title=f"{label} – {y} vs {x}",
             color="Flow Category",
             category_orders={"Flow Category": flow_category_order},
             color_discrete_map=flow_colors,
@@ -155,27 +199,22 @@ def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template)
             height=300,
             width=300,
         )
-        # rename the single trendline trace
         fig.update_traces(selector=dict(mode="lines"), name="Trend")
         fig.update_layout(margin=SMALL_MARGIN)
         return fig
 
-    open_sub  = df[df["state"] == "OPEN"]
-    close_sub = df[df["state"] == "CLOSE"]
+    open_sub  = df[get_state_filter(df, "OPEN")]
+    close_sub = df[get_state_filter(df, "CLOSE")]
 
     return (
-        mk_trace(open_sub,  "Flow Rate (gpm)", "Max Pressure", "OPEN – Pressure vs Flow Rate (gpm)"),
-        mk_trace(open_sub,  "Δ (gal)",         "Max Pressure", "OPEN – Pressure vs Δ (gal)"),
-        mk_trace(close_sub, "Flow Rate (gpm)", "Max Pressure", "CLOSE – Pressure vs Flow Rate (gpm)"),
-        mk_trace(close_sub, "Δ (gal)",         "Max Pressure", "CLOSE – Pressure vs Δ (gal)"),
+        mk_trace(open_sub,  "Flow Rate (gpm)", "Max Pressure", "OPEN"),
+        mk_trace(open_sub,  "Δ (gal)",         "Max Pressure", "OPEN"),
+        mk_trace(close_sub, "Flow Rate (gpm)", "Max Pressure", "CLOSE"),
+        mk_trace(close_sub, "Δ (gal)",         "Max Pressure", "CLOSE"),
     )
 
-
-
 def plot_accumulator(vol_df, template="plotly"):
-    """Plot accumulator gallons over time as lines, colored by Active Pod, DOWNSAMPLED for display."""
     df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
-    # Downsample ONLY for visualization; calculations use full data!
     df = downsample_for_display(df, target_points=4000)
     df["segment"] = (df["Active Pod"] != df["Active Pod"].shift()).cumsum()
     pod_colors = BY_COLORS
@@ -201,9 +240,10 @@ def plot_accumulator(vol_df, template="plotly"):
     )
     return fig
 
-
 def plot_time_series(sub_df, template="plotly", oc_colors=None):
-    """Two-row time series for Max Pressure and Δ (gal), colored by OPEN/CLOSE."""
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    valve_name = sub_df["valve"].iloc[0] if not sub_df.empty and "valve" in sub_df.columns else ""
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -211,12 +251,13 @@ def plot_time_series(sub_df, template="plotly", oc_colors=None):
         subplot_titles=("Max Pressure Over Time", "Δ (gal) Over Time"),
     )
     for state in ["OPEN", "CLOSE"]:
-        s = sub_df[sub_df["state"] == state]
+        s = sub_df[get_state_filter(sub_df, state)]
         color = (oc_colors or {}).get(state, "#999999")
+        label = get_chart_title(valve_name, state)
         fig.add_trace(
             go.Scatter(
                 x=s["timestamp"], y=s["Max Pressure"],
-                mode="markers", name=f"Pressure ({state})",
+                mode="markers", name=f"Pressure ({label})",
                 marker=dict(color=color),
             ),
             row=1, col=1,
@@ -224,11 +265,10 @@ def plot_time_series(sub_df, template="plotly", oc_colors=None):
         fig.add_trace(
             go.Scatter(
                 x=s["timestamp"], y=s["Δ (gal)"],
-                mode="markers", name=f"Δ (gal) ({state})",
+                mode="markers", name=f"Δ (gal) ({label})",
                 marker=dict(color=color),
             ),
             row=2, col=1,
         )
-
     fig.update_layout(height=250, template=template, margin=SMALL_MARGIN)
     return fig

@@ -1,4 +1,5 @@
 # logic/tag_maps.py
+
 def get_rig_tags(rig):
     if rig == "Drillmax":
         _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
@@ -26,7 +27,6 @@ def get_rig_tags(rig):
             ]},
         }
         default_press_tag = f"{pressure_base}.ScaledValue11"
-        # Drillmax Well Pressure is ScaledValue12
         pressure_map["Well Pressure"] = f"{pressure_base}.ScaledValue12"
     else:
         _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
@@ -54,11 +54,50 @@ def get_rig_tags(rig):
             ]},
         }
         default_press_tag = f"{pressure_base}.ScaledValue18"
-        # Other rigs Well Pressure is ScaledValue48
         pressure_map["Well Pressure"] = f"{pressure_base}.ScaledValue48"
 
     for v in valve_map:
         pressure_map.setdefault(v, default_press_tag)
+
+    # ---- Status Mapping ----
+
+    simple_map_rams = {
+        256: "VENT",
+        513: "OPEN", 514: "CLOSE", 515: "OPEN", 516: "CLOSE",
+        1025: "OPEN", 1026: "CLOSE", 1027: "OPEN", 1028: "CLOSE",
+        4096: "ERROR",
+    }
+    function_map_rams = {
+        256: "VENT",
+        513: "OPEN", 514: "CLOSE", 515: "OPEN VENT", 516: "CLOSE VENT",
+        1025: "OPEN", 1026: "CLOSE", 1027: "OPEN VENT", 1028: "CLOSE VENT",
+        4096: "ERROR",
+    }
+
+    # Connectors: LATCH/UNLATCH (+ VENT)
+    simple_map_connector = {
+        256: "VENT",
+        513: "LATCH", 514: "UNLATCH", 515: "LATCH", 516: "UNLATCH",
+        1025: "LATCH", 1026: "UNLATCH", 1027: "LATCH", 1028: "UNLATCH",
+        4096: "ERROR",
+    }
+    function_map_connector = {
+        256: "VENT",
+        513: "LATCH", 514: "UNLATCH", 515: "LATCH VENT", 516: "UNLATCH VENT",
+        1025: "LATCH", 1026: "UNLATCH", 1027: "LATCH VENT", 1028: "UNLATCH VENT",
+        4096: "ERROR",
+    }
+
+    # Per-valve assignment (key!)
+    per_valve_simple_map = {}
+    per_valve_function_map = {}
+    for v in valve_map:
+        if "Connector" in v:
+            per_valve_simple_map[v] = simple_map_connector
+            per_valve_function_map[v] = function_map_connector
+        else:
+            per_valve_simple_map[v] = simple_map_rams
+            per_valve_function_map[v] = function_map_rams
 
     return {
         "valve_map": valve_map,
@@ -66,4 +105,6 @@ def get_rig_tags(rig):
         "active_pod_tag": active_pod_tag,
         "pressure_map": pressure_map,
         "eds_base_tag": eds_base_tag,
+        "per_valve_simple_map": per_valve_simple_map,
+        "per_valve_function_map": per_valve_function_map,
     }

@@ -9,21 +9,19 @@ EDS_CHANNELS = ["Ba", "Bb", "Ya", "Yb"]
 POD_CHANNEL_MAP = {1: "Ba", 2: "Bb", 3: "Ya", 4: "Yb"}
 
 def get_eds_triggers_and_valve_events(
-    rig, start, end, valve_map, simple_map, vol_ext, active_pod_tag, eds_base_tag, window_seconds=900
+    rig, start, end, valve_map, simple_map, function_map, vol_ext, active_pod_tag, eds_base_tag, window_seconds=900
 ):
     all_triggers = []
     all_valve_events = []
-    pod_tag = active_pod_tag  # Use passed tag
+    pod_tag = active_pod_tag
     pod_df = get_timeseries_data(pod_tag, start, end)
     vol_df = get_timeseries_data(vol_ext, start, end)
     if not vol_df.empty:
         vol_df['timestamp_dt'] = pd.to_datetime(vol_df['timestamp'])
         vol_df = vol_df.sort_values('timestamp_dt')
 
-    # Gather all EDS triggers (with channel and pod for assignment)
     trigger_list = []
     for ch in EDS_CHANNELS:
-        # Build eds_tag depending on rig:
         if rig == "Drillmax":
             eds_tag = f"{eds_base_tag}{ch}EDSProgress"
         else:
@@ -40,7 +38,6 @@ def get_eds_triggers_and_valve_events(
         for _, trig_row in triggers.iterrows():
             trigger_time = trig_row['timestamp_dt']
             trigger_val = trig_row['value']
-            # Find pod at command time
             pod_row = pod_df[pod_df['timestamp'] <= trigger_time]
             if not pod_row.empty:
                 pod_val = int(pod_row.iloc[-1]['value'])
@@ -57,7 +54,6 @@ def get_eds_triggers_and_valve_events(
                     "EDS Command Value": trig_val_display,
                 })
 
-    # Sort triggers by time
     triggers_df = pd.DataFrame(trigger_list)
     if triggers_df.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -65,7 +61,6 @@ def get_eds_triggers_and_valve_events(
     triggers_df = triggers_df.sort_values("EDS Command Time").reset_index(drop=True)
     triggers_df.insert(0, "Event #", triggers_df.index + 1)
 
-    # For each EDS trigger, determine its own window
     total_vols = []
     for i, row in triggers_df.iterrows():
         this_time = row["EDS Command Time"]
@@ -75,7 +70,6 @@ def get_eds_triggers_and_valve_events(
         else:
             window_end = this_time + timedelta(seconds=window_seconds)
 
-        # Flow accumulation: use this window
         total_vol = None
         if not vol_df.empty:
             vol_window = vol_df[
@@ -88,7 +82,6 @@ def get_eds_triggers_and_valve_events(
                 total_vol = round((vol_max - vol_min) / 10, 2)
         total_vols.append(total_vol)
 
-        # Valve events: only assign those in this window
         for valve_name, tag in valve_map.items():
             valve_df = get_timeseries_data(tag, this_time, window_end)
             if valve_df.empty:
@@ -100,34 +93,36 @@ def get_eds_triggers_and_valve_events(
                 event_time = pd.to_datetime(vrow['timestamp'])
                 seconds_after = (event_time - this_time).total_seconds()
                 if 0 <= seconds_after < (window_end - this_time).total_seconds():
-                    event_type = simple_map.get(int(vrow['value']), "OTHER")
-                    status_code = int(vrow['value']) if 'value' in vrow else None
+                    raw_code = int(vrow['value'])
+                    # Use per-valve mappings
+                    event_type = simple_map[valve_name].get(raw_code, "OTHER")
+                    function_type = function_map[valve_name].get(raw_code, "OTHER")
+                    display_state = event_type
                     all_valve_events.append({
                         "EDS Command Time": this_time,
                         "EDS Command Value": row["EDS Command Value"],
                         "Valve Name": valve_name,
-                        "Valve Event": event_type,
+                        "Valve Event": display_state,
+                        "Function State": function_type,
+                        "Raw Status Code": raw_code,
                         "Valve Event Time": event_time,
-                        "Seconds After Command": int(seconds_after),
-                        "Status Code": status_code
+                        "Seconds After Command": int(seconds_after)
                     })
 
-    # Update triggers_df with computed volumes
     triggers_df["Total Volume (gal)"] = total_vols
-
     valve_events_df = pd.DataFrame(all_valve_events)
     return triggers_df, valve_events_df
 
 def render_eds_cycles(
     rig, start_date, end_date,
-    valve_map=None, simple_map=None,
+    valve_map=None, per_valve_simple_map=None, per_valve_function_map=None,
     vol_ext=None, active_pod_tag=None, eds_base_tag=None
 ):
     cache_key = f"eds_data_{rig}_{start_date}_{end_date}"
     if (cache_key not in st.session_state) or st.button("Reload EDS Data"):
         triggers_df, valve_events_df = get_eds_triggers_and_valve_events(
             rig, start_date, end_date,
-            valve_map, simple_map, vol_ext,
+            valve_map, per_valve_simple_map, per_valve_function_map, vol_ext,
             active_pod_tag, eds_base_tag,
             window_seconds=900  # 15 min
         )
@@ -174,9 +169,10 @@ def render_eds_cycles(
                     "EDS Command Value",
                     "Valve Name",
                     "Valve Event",
+                    "Function State",
+                    "Raw Status Code",
                     "Valve Event Time",
-                    "Seconds After Command",
-                    "Status Code"
+                    "Seconds After Command"
                 ]
             ],
             use_container_width=True,

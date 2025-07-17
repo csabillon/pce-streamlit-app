@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 
-from ui.charts import (
+from ui_components.charts import (
     plot_open_close_pie_bar,
     plot_boxplots,
     plot_pressure_boxplots,
@@ -11,7 +11,7 @@ from ui.charts import (
     plot_time_series,
     plot_accumulator,
 )
-from ui.tables import generate_statistics_table, generate_details_table
+from ui_components.tables import generate_statistics_table, generate_details_table
 
 def render_dashboard(
     df: pd.DataFrame,
