@@ -1,5 +1,3 @@
-# app.py
-
 from cognite.client.config import global_config
 import streamlit as st
 from utils.themes import get_plotly_template
@@ -44,6 +42,18 @@ params = st.query_params
 requested_rig = params.get("rig")
 requested_theme = params.get("theme")
 
+# --- Fix for page selection via deeplink ---
+available_pages = [
+    "Valve Analytics",
+    "Pods Overview",
+    "EDS Cycles",
+    "Pressure Cycles",
+]
+requested_page = params.get("page")
+page_from_deeplink = (
+    requested_page if requested_page in available_pages else available_pages[0]
+)
+
 if requested_theme in ("dark", "light"):
     st._config.set_option("theme.base", requested_theme)
 
@@ -57,7 +67,9 @@ rig_map = {
 }
 default_rig = rig_map.get(requested_rig, None)
 
-rig, start_date, end_date, category_windows, page = render_sidebar(default_rig)
+# --- Use deep-link page if present ---
+sidebar_args = dict(default_rig=default_rig, default_page=page_from_deeplink)
+rig, start_date, end_date, category_windows, page = render_sidebar(**sidebar_args)
 
 oc_colors = OC_COLORS
 by_colors = BY_COLORS
@@ -133,6 +145,16 @@ else:
     pressure_series_by_valve = _prs["pressure_series_by_valve"]
     well_pressure_series = _prs["well_pressure_series"]
     regulator_pressure_series_map = _prs["regulator_pressure_series_map"]
+
+# --- PAGE/URL STATE SYNC ---
+# Ensure URL reflects sidebar selection. Use session_state.page for 1st load.
+if "page" not in st.session_state:
+    st.session_state.page = page
+elif st.session_state.page != page:
+    st.session_state.page = page
+    st.experimental_set_query_params(
+        **{**params, "page": page}
+    )
 
 # --- MAIN PAGE HANDLING ---
 if df is not None and vol_df is not None:

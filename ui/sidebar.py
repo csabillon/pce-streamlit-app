@@ -3,7 +3,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 
-def render_sidebar(default_rig: str | None = None):
+def render_sidebar(default_rig: str | None = None, default_page: str | None = None):
     today = datetime.today()
     default_start = today - timedelta(days=60)
     default_end = today
@@ -20,9 +20,19 @@ def render_sidebar(default_rig: str | None = None):
     )
     rig = rigs[rig_labels.index(selected_label)]
 
-    # Add page selector to sidebar
+    # --- Page selection with default from deeplink ---
     all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles", "Pressure Cycles"]
-    page = st.sidebar.radio("Select Page", all_pages, key="sidebar_page")
+    if default_page in all_pages:
+        page_index = all_pages.index(default_page)
+    else:
+        page_index = 0
+
+    page = st.sidebar.radio(
+        "Select Page",
+        all_pages,
+        index=page_index,
+        key="sidebar_page"
+    )
 
     start_date = st.sidebar.date_input("Start Date", default_start)
     end_date = st.sidebar.date_input("End Date", default_end)
@@ -39,5 +49,4 @@ def render_sidebar(default_rig: str | None = None):
     if end_date < start_date:
         st.sidebar.error("End Date must be on or after Start Date")
 
-    # Return the selected page as well!
     return rig, start_date, end_date, category_windows, page
