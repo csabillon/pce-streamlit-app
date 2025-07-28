@@ -147,14 +147,9 @@ else:
     regulator_pressure_series_map = _prs["regulator_pressure_series_map"]
 
 # --- PAGE/URL STATE SYNC ---
-# Ensure URL reflects sidebar selection. Use session_state.page for 1st load.
-if "page" not in st.session_state:
-    st.session_state.page = page
-elif st.session_state.page != page:
-    st.session_state.page = page
-    st.experimental_set_query_params(
-        **{**params, "page": page}
-    )
+# Ensure URL reflects sidebar selection. Use new st.query_params API only!
+if st.query_params.get("page") != page:
+    st.query_params["page"] = page
 
 # --- MAIN PAGE HANDLING ---
 if df is not None and vol_df is not None:
