@@ -1,21 +1,17 @@
-## ui_components/charts.py
+# ui_components/charts.py
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from logic.preprocessing import downsample_for_display
 from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 
 PIE_SIZE = 250
 BAR_SIZE = 250
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
-
-# --- Helper for connectors ---
 CONNECTOR_VALVES = {"LMRP Connector", "Wellhead Connector"}
 
 def get_state_label(valve_name, state):
-    """Return user-friendly label for this state/valve combination."""
     if valve_name in CONNECTOR_VALVES:
         if state == "OPEN":
             return "LATCH"
@@ -26,7 +22,6 @@ def get_state_label(valve_name, state):
         return state
 
 def get_state_filter(df, desired_state):
-    """Return a boolean mask for rows matching desired_state, accounting for connectors."""
     if "valve" not in df.columns or "state" not in df.columns:
         return pd.Series([False] * len(df), index=df.index)
     mask = []
@@ -34,7 +29,6 @@ def get_state_filter(df, desired_state):
         val = row["valve"]
         s = row["state"]
         if val in CONNECTOR_VALVES:
-            # For connectors, "OPEN" means LATCH, "CLOSE" means UNLATCH
             if desired_state == "OPEN" and s == "LATCH":
                 mask.append(True)
             elif desired_state == "CLOSE" and s == "UNLATCH":
@@ -42,14 +36,10 @@ def get_state_filter(df, desired_state):
             else:
                 mask.append(False)
         else:
-            if s == desired_state:
-                mask.append(True)
-            else:
-                mask.append(False)
+            mask.append(s == desired_state)
     return pd.Series(mask, index=df.index)
 
 def get_chart_title(valve_name, state):
-    """Show only the relevant label: 'LATCH', 'UNLATCH', 'OPEN', 'CLOSE'."""
     return get_state_label(valve_name, state)
 
 def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):

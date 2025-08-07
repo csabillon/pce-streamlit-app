@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 from ui_components.charts import (
     plot_open_close_pie_bar,
@@ -12,6 +13,102 @@ from ui_components.charts import (
     plot_accumulator,
 )
 from ui_components.tables import generate_statistics_table, generate_details_table
+
+
+# ---- KPI helpers ------------------------------------------------------------
+
+def _compute_pressure_cycles_metrics(sub_df: pd.DataFrame) -> tuple[int, float, float]:
+    """
+    Count CLOSE->next OPEN pairs (for selected valve), average duration (min),
+    and total duration (min). Mirrors logic on Pressure Cycles page: cycles anchored on CLOSE.
+    """
+    if sub_df.empty:
+        return 0, 0.0, 0.0
+
+    s = sub_df.sort_values("timestamp").copy()
+    s["timestamp"] = pd.to_datetime(s["timestamp"])
+    states = s["state"].to_numpy()
+    times = s["timestamp"].to_numpy()
+
+    close_idxs = np.where(states == "CLOSE")[0]
+    durations = []
+    for idx in close_idxs:
+        nxt = np.where((np.arange(len(states)) > idx) & (states == "OPEN"))[0]
+        if nxt.size == 0:
+            continue
+        j = nxt[0]
+        dur_min = (times[j] - times[idx]).astype("timedelta64[s]").astype(float) / 60.0
+        if np.isfinite(dur_min) and dur_min >= 0:
+            durations.append(dur_min)
+
+    if not durations:
+        return 0, 0.0, 0.0
+
+    durations = np.array(durations, dtype=float)
+    return int(len(durations)), float(np.mean(durations)), float(np.sum(durations))
+
+
+def _render_kpi(label: str, value: str):
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _inject_kpi_css():
+    """
+    Theme-proof KPI styling:
+    - Text/border use var(--text-color) so they always contrast the theme background.
+    - Border uses currentColor to stay in sync with text color.
+    - Transparent background as requested.
+    - Subtle shadow and hover lift that work in both themes.
+    NOTE: injected every render to avoid any timing/rerender edge cases.
+    """
+    st.markdown(
+        """
+        <style>
+        .kpi-card{
+            /* Use Streamlit theme tokens */
+            color: var(--text-color);
+            border:1.5px solid currentColor;  /* same color as text */
+            border-radius:18px;
+            padding:12px 16px;
+            text-align:center;
+            background:transparent;
+
+            /* Motion & elevation */
+            transition: box-shadow 120ms ease, transform 120ms ease;
+            /* Neutral shadow that works on light/dark */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+        .kpi-card:hover{
+            box-shadow: 0 4px 14px rgba(0,0,0,0.20);
+            transform: translateY(-1px);
+        }
+        .kpi-label{
+            font-size:0.92rem;
+            color: currentColor;
+            opacity:0.9;
+            margin-bottom:2px;
+        }
+        .kpi-value{
+            font-size:1.6rem;
+            font-weight:600;
+            color: currentColor;
+            line-height:1.2;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---- Main render ------------------------------------------------------------
 
 def render_dashboard(
     df: pd.DataFrame,
@@ -39,8 +136,11 @@ def render_dashboard(
                 st.warning(f"No events for {pod_name}")
                 continue
 
-            available     = pod_events["valve"].unique()
-            valid_valves  = [v for v in valve_order if v in available]
+            available = pod_events["valve"].unique()
+            valid_valves = [v for v in valve_order if v in available]
+            if not valid_valves:
+                st.warning("No valid valves for this pod.")
+                continue
             default_valve = st.session_state.get(shared_key, valid_valves[0])
             if default_valve not in valid_valves:
                 default_valve = valid_valves[0]
@@ -60,6 +160,38 @@ def render_dashboard(
                 categories=flow_category_order,
                 ordered=True,
             )
+
+            # ------------------ KPI ROW ------------------
+            _inject_kpi_css()
+
+            wet_threshold = st.session_state.get("wet_threshold", 700)
+            open_count = int((sub["state"] == "OPEN").sum())
+            close_count = int((sub["state"] == "CLOSE").sum())
+
+            # robust access in case "Max Well Pressure" is missing
+            mwp = sub["Max Well Pressure"] if "Max Well Pressure" in sub.columns else pd.Series([np.nan] * len(sub), index=sub.index)
+
+            wet_open = int(((sub["state"] == "OPEN") & (mwp > wet_threshold)).sum())
+            wet_close = int(((sub["state"] == "CLOSE") & (mwp > wet_threshold)).sum())
+
+            cycles_cnt, avg_cycle_min, total_cycle_min = _compute_pressure_cycles_metrics(sub)
+
+            kcols = st.columns(7)
+            with kcols[0]:
+                _render_kpi("Pressure Cycles (Close→Open)", f"{cycles_cnt}")
+            with kcols[1]:
+                _render_kpi("Avg Cycle Duration", f"{avg_cycle_min:.0f} min")
+            with kcols[2]:
+                _render_kpi("Total Cycle Duration", f"{total_cycle_min:.0f} min")
+            with kcols[3]:
+                _render_kpi("Open Cycles", f"{open_count}")
+            with kcols[4]:
+                _render_kpi("Close Cycles", f"{close_count}")
+            with kcols[5]:
+                _render_kpi(f"Wet Open (>{wet_threshold} psi)", f"{wet_open}")
+            with kcols[6]:
+                _render_kpi(f"Wet Close (>{wet_threshold} psi)", f"{wet_close}")
+            # ---------------------------------------------------
 
             st.subheader("Pressure and Flow Distribution by Flow Category")
             c1, c2, c3, c4 = st.columns(4)
@@ -96,16 +228,25 @@ def render_dashboard(
 
             st.markdown("---")
             st.subheader("Valve Event Statistics")
-            st.dataframe(
-                generate_statistics_table(pod_events),
-                use_container_width=True,
-                hide_index=True,
-                key=f"{pod_name}_stats"
-            )
+            stats_table = generate_statistics_table(pod_events)
+            if stats_table.empty:
+                st.info("No statistics available for this selection.")
+            else:
+                st.dataframe(
+                    stats_table,
+                    use_container_width=True,
+                    hide_index=True,
+                    key=f"{pod_name}_stats"
+                )
+
             st.subheader("Valve Event Details")
-            st.dataframe(
-                generate_details_table(pod_events),
-                use_container_width=True,
-                hide_index=True,
-                key=f"{pod_name}_details"
-            )
+            details_table = generate_details_table(pod_events)
+            if details_table.empty:
+                st.info("No event details available for this selection.")
+            else:
+                st.dataframe(
+                    details_table,
+                    use_container_width=True,
+                    hide_index=True,
+                    key=f"{pod_name}_details"
+                )

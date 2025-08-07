@@ -1,12 +1,14 @@
+# ui/overview.py
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+from utils.colors import BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
+
 PIE_SIZE     = 300
 BOX_SIZE     = 300
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
-
-# Helper for correct state/label for connectors
 CONNECTOR_VALVES = {"LMRP Connector", "Wellhead Connector"}
 
 def get_state_label(valve_name, state):
@@ -20,7 +22,6 @@ def get_state_label(valve_name, state):
         return state
 
 def get_legend_state(df):
-    """Return all unique legend labels to use for state color/legend ordering in boxplots."""
     if "valve" not in df.columns or "state" not in df.columns:
         return ["OPEN", "CLOSE"]
     states = []
@@ -28,7 +29,6 @@ def get_legend_state(df):
         label = get_state_label(row["valve"], row["state"])
         if label not in states:
             states.append(label)
-    # Always show in this order if present
     order = []
     for s in ["LATCH", "UNLATCH", "OPEN", "CLOSE"]:
         if s in states:
@@ -46,16 +46,12 @@ def render_overview(
 ):
     st.header("Pods Overview")
 
-    # ── Filter to Blue & Yellow ────────────────────────────────────────────
     df2 = df[df["Active Pod"].isin(["Blue Pod", "Yellow Pod"])].copy()
-
-    # Map states for connectors to LATCH/UNLATCH for color/legend
     df2["Display State"] = [
         get_state_label(row["valve"], row["state"])
         for _, row in df2.iterrows()
     ]
 
-    # ── Prepare vol_df ────────────────────────────────────────────────────
     vol = vol_df.copy()
     if "timestamp" in vol.columns:
         vol["timestamp"] = pd.to_datetime(vol["timestamp"])
@@ -67,12 +63,11 @@ def render_overview(
         vol["timestamp"] = pd.to_datetime(vol["timestamp"])
     vol = vol[vol["Active Pod"].isin(["Blue Pod", "Yellow Pod"])]
 
-    # ── Compute Time & Flow Utilization ──────────────────────────────────
     vol = vol.sort_values("timestamp")
     vol["time_diff"] = vol["timestamp"].diff().dt.total_seconds().fillna(0)
     vol["pod_prev"]  = vol["Active Pod"].shift().fillna(vol["Active Pod"])
     time_by_pod = (
-        vol.groupby("pod_prev")["time_diff"]
+        vol.groupby("pod_prev", observed=True)["time_diff"]
            .sum().reset_index()
            .rename(columns={"pod_prev":"Pod","time_diff":"Time_Sec"})
     )
@@ -80,17 +75,14 @@ def render_overview(
     total_min = time_by_pod["Time_Min"].sum().round(1)
 
     flow_by_pod = (
-        df2.groupby("Active Pod")["Δ (gal)"]
+        df2.groupby("Active Pod", observed=True)["Δ (gal)"]
            .sum().reset_index()
            .rename(columns={"Active Pod":"Pod","Δ (gal)":"Flow_Gal"})
     )
     flow_by_pod["Flow_Gal"] = flow_by_pod["Flow_Gal"].round(1)
     total_gal = flow_by_pod["Flow_Gal"].sum().round(1)
 
-    # ── Top row: Donut pies & boxplots ────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
-
-    # Time Utilization Pie
     with c1:
         fig = px.pie(
             time_by_pod, names="Pod", values="Time_Min", hole=0.5,
@@ -107,7 +99,6 @@ def render_overview(
         fig.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
         st.plotly_chart(fig, use_container_width=True)
 
-    # Flow Utilization Pie
     with c2:
         fig = px.pie(
             flow_by_pod, names="Pod", values="Flow_Gal", hole=0.5,
@@ -124,7 +115,6 @@ def render_overview(
         fig.update_layout(legend_title_text="Pod", margin=SMALL_MARGIN)
         st.plotly_chart(fig, use_container_width=True)
 
-    # Δ (gal) Boxplot
     df2_cat = df2.assign(**{"Flow Category": pd.Categorical(
         df2["Flow Category"], categories=flow_category_order, ordered=True
     )})
@@ -144,7 +134,6 @@ def render_overview(
         fig.update_layout(margin=SMALL_MARGIN, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
 
-    # Max Pressure Boxplot
     with c4:
         fig = px.box(
             df2_cat, x="Active Pod", y="Max Pressure", color="Display State",
@@ -161,15 +150,12 @@ def render_overview(
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
-
-    # ── Bottom row: 3 columns, stacked by Flow Category, total-only labels ──────────────────
     col_blue, col_yellow, col_total = st.columns(3)
 
     def plot_depletion(pod_name: str, container, df_src: pd.DataFrame):
-        # Summarize depletion by valve & flow category
         summary = (
             df_src
-            .groupby(["valve", "Flow Category"])["Depletion (%)"]
+            .groupby(["valve", "Flow Category"], observed=True)["Depletion (%)"]
             .sum().reset_index()
         )
         pivot = (
@@ -178,13 +164,9 @@ def render_overview(
             .fillna(0)
             .reindex(columns=flow_category_order, fill_value=0)
         )
-
-        # Melt for px.bar
         long = pivot.reset_index().melt(
             id_vars="valve", var_name="Flow Category", value_name="Depletion"
         )
-
-        # Build stacked bar chart
         fig = px.bar(
             long,
             y="valve",
@@ -195,10 +177,8 @@ def render_overview(
             template=plotly_template,
             category_orders={"Flow Category": flow_category_order},
             color_discrete_map=flow_colors,
-            text=None,  # no segment labels
+            text=None,
         )
-
-        # Add a single annotation per bar: the total depletion
         totals = pivot.sum(axis=1)
         for valve, total in totals.items():
             fig.add_annotation(
@@ -209,18 +189,15 @@ def render_overview(
                 xanchor="left",
                 font=dict(size=12),
             )
-
-        # Dynamic height & layout
         n = pivot.shape[0]
         height = max(BOX_SIZE, n * 40 + 120)
         fig.update_layout(
             height=height,
             margin=dict(l=240, r=20, t=40, b=20),
-            showlegend=(pod_name == "Total Depletion by Flow Category"),  # legend only on Total
+            showlegend=(pod_name == "Total Depletion by Flow Category"),
         )
         fig.update_xaxes(title="Depletion (%)")
         fig.update_yaxes(automargin=True, tickfont=dict(size=12), title="")
-
         container.plotly_chart(fig, use_container_width=True)
 
     with col_blue:

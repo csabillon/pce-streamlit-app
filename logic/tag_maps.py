@@ -1,5 +1,8 @@
 # logic/tag_maps.py
 
+from functools import lru_cache
+
+@lru_cache(maxsize=8)
 def get_rig_tags(rig):
     if rig == "Drillmax":
         _prefix = f"pi-no:{rig}.BOP.CBM.Valve_Status"
@@ -9,7 +12,7 @@ def get_rig_tags(rig):
             "LMRP Connector": _prefix + "2",
             "Upper Blind Shear": _prefix + "6",
             "Casing Shear Ram": _prefix + "7",
-            "Lower Blind Shear": _prefix + "14",
+            "Lower Blind Shear": _prefix + "70",
             "Upper Pipe Ram": _prefix + "8",
             "Middle Pipe Ram": _prefix + "9",
             "Lower Pipe Ram": _prefix + "10",
@@ -59,8 +62,6 @@ def get_rig_tags(rig):
     for v in valve_map:
         pressure_map.setdefault(v, default_press_tag)
 
-    # ---- Status Mapping ----
-
     simple_map_rams = {
         256: "VENT",
         513: "OPEN", 514: "CLOSE", 515: "OPEN", 516: "CLOSE",
@@ -73,8 +74,6 @@ def get_rig_tags(rig):
         1025: "OPEN", 1026: "CLOSE", 1027: "OPEN VENT", 1028: "CLOSE VENT",
         4096: "ERROR",
     }
-
-    # Connectors: LATCH/UNLATCH (+ VENT)
     simple_map_connector = {
         256: "VENT",
         513: "LATCH", 514: "UNLATCH", 515: "LATCH", 516: "UNLATCH",
@@ -88,7 +87,6 @@ def get_rig_tags(rig):
         4096: "ERROR",
     }
 
-    # Per-valve assignment (key!)
     per_valve_simple_map = {}
     per_valve_function_map = {}
     for v in valve_map:

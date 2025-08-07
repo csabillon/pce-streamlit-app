@@ -35,7 +35,7 @@ def render_pressure_cycles(
 
     st.sidebar.markdown("#### Wet/Dry Cycle Threshold")
     WET_THRESHOLD = st.sidebar.number_input(
-        "Wet/Dry Cycle Threshold (psi):", min_value=0, max_value=2000, value=100, step=10, key="wet_threshold"
+        "Wet/Dry Cycle Threshold (psi):", min_value=0, max_value=2000, value=700, step=10, key="wet_threshold"
     )
 
     # --- Wet and Dry cycle counts per valve ---
