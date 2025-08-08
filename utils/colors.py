@@ -19,5 +19,5 @@ FLOW_COLORS = {
     "High": "#EB5E5E",  # Ext Red 5   
 }
 
-# 4) FLOW CATEGORY ORDER
+# 4) FLOW CATEGORY ORDER 
 FLOW_CATEGORY_ORDER = ["Low", "Mid", "High"]
