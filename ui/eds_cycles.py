@@ -15,6 +15,8 @@ def get_eds_triggers_and_valve_events(
     all_valve_events = []
     pod_tag = active_pod_tag
     pod_df = get_timeseries_data(pod_tag, start, end)
+    pod_df["timestamp"] = pd.to_datetime(pod_df["timestamp"])
+    pod_df = pod_df.sort_values("timestamp")
     vol_df = get_timeseries_data(vol_ext, start, end)
     if not vol_df.empty:
         vol_df['timestamp_dt'] = pd.to_datetime(vol_df['timestamp'])
