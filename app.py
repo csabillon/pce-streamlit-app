@@ -8,6 +8,7 @@ from ui.dashboard import render_dashboard
 from ui.overview import render_overview
 from ui.eds_cycles import render_eds_cycles
 from ui.pressure_cycles import render_pressure_cycles
+from ui.analog_trends import render_analog_trends
 from utils.colors import OC_COLORS, BY_COLORS, FLOW_COLORS, FLOW_CATEGORY_ORDER
 from logic.tag_maps import get_rig_tags
 from logic.data_loaders import get_pressure_df
@@ -43,7 +44,13 @@ params = st.query_params
 requested_rig = params.get("rig")
 requested_theme = params.get("theme")
 
-available_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles", "Pressure Cycles"]
+available_pages = [
+    "Valve Analytics",
+    "Pods Overview",
+    "EDS Cycles",
+    "Pressure Cycles",
+    "Analog Trends",
+]
 requested_page = params.get("page")
 page_from_deeplink = requested_page if requested_page in available_pages else available_pages[0]
 
@@ -190,5 +197,12 @@ if df is not None and vol_df is not None:
             )
         else:
             st.warning("No well pressure data available for analysis.")
+    elif page == "Analog Trends":
+        render_analog_trends(
+            rig=rig,
+            default_start=start_date,
+            default_end=end_date,
+            template=plotly_template,
+        )
 else:
     st.info("Please click **Load Data** in the sidebar to get started.")
