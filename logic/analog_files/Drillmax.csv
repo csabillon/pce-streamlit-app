@@ -1,0 +1,59 @@
+Ch,Analog Name,Min Raw,Max Raw,Min EU,Max EU,Type,Units,Deadband
+1,Annular Regulator Pilot Pressure,819,4095,0,850,pressure-hyd,psi,3
+2,Connector Regulator Pilot Pressure,819,4095,0,850,pressure-hyd,psi,3
+3,Solenoid Regulator Supply,819,4095,0,850,pressure-hyd,psi,3
+4,,819,4095,0,850,pressure-hyd,psi,3
+5,Subsea Supply Readback Pressure,819,4095,0,850,pressure-hyd,psi,3
+6,Solenoid Valve Supply Readback Pressure,819,4095,0,850,pressure-hyd,psi,3
+7,Conduit Supply Readback Pressure,819,4095,0,850,pressure-hyd,psi,3
+8,Annular Regulator Readback Pressure,819,4095,0,850,pressure-hyd,psi,3
+9,Hydrostatic Pressure #1,819,4095,0,850,hyd,psi,3
+10,Connector Regulator Readback Pressure,819,4095,0,850,Pressure-hyd,psi,3
+11,BOP Manifold Regulator Readback Pressure,819,4095,0,850,pressure-hyd,psi,3
+12,Connector Latch Pressure,819,4095,0,850,pressure-hyd,psi,3
+13,BOP Manifold Regulator Pilot Pressure,819,4095,0,850,pressure-hyd,psi,3
+14,Hydrostatic Pressure 2,819,4095,0,850,hyd2,psi,3
+15,Fail Safe Acc. Charge Readback,819,4095,0,850,pressure-hyd,psi,3
+16,,819,4095,0,850,pressure-hyd,psi,3
+17,,819,4095,0,850,,,3
+18,,819,4095,0,850,pressure-hyd,psi,3
+19,,819,4095,0,850,,psi,3
+20,,819,4095,0,850,pressure-hyd,psi,3
+21,Power Supply 1,819,4095,0,34,volts,volts,3
+22,Power Supply 2,819,4095,0,34,volts,volts,3
+23,Power Supply 3,819,4095,0,34,volts,volts,3
+24,,819,4095,0,850,raw,pulses,3
+25,Stack Inclination X-Direction,819,4095,-15,15,angle,degrees,3
+26,Stack Inclination Y-Direction,819,4095,-15,15,angle,degrees,3
+27,,819,4095,-14.5,14.5,angle,degrees,3
+28,,819,4095,-14.5,14.5,angle,degrees,3
+29,,819,4095,0,0,raw,raw,3
+30,,0,4095,0,0,,,3
+31,SEM Temperature,-400,1240,-40,124,temp,Degree,3
+32,SEM Humidity,0,1000,0,100,moist,Percent,3
+33,Riser Inclinometer X-Direction Blue Pod,819,4095,-15,15,angle,degrees,3
+34,Riser Inclinometer Y-Direction Blue Pod,819,4095,-15,15,angle,degrees,3
+35,,0,4095,0,0,,,3
+36,,0,4095,0,0,,,3
+37,,819,4095,0,1379,pressure-hyd,psi,3
+38,,819,4095,-40,200,temp,degrees,3
+39,,819,4095,0,1379,pressure-hyd,psi,3
+40,,819,4095,-40,200,temp,degrees,3
+41,Blue Flow Meter Input,819,4095,0,850,raw,pulses,0
+42,Riser Inclinometer X-Direction Yellow Pod,819,4095,-15,15,angle,degrees,3
+43,Riser Inclinometer Y-Direction Yellow Pod,819,4095,-15,15,angle,degrees,3
+44,BOP Pressure from Yellow RCB,819,4095,0,1379,pressure-hyd,psi,3
+45,BOP Temperature from Yellow RCB,819,4095,-40,200,temp,degrees,3
+46,BOP Acccumulator Pressure from Yellow RCB,819,4095,0,1034.19995,pressure-hyd,psi,3
+47,,819,4095,-40,200,temp,degrees,3
+48,,819,4095,0,1379,pressure-hyd,psi,3
+49,,819,4095,-40,200,temp,degrees,3
+50,Yellow Flowmeter ,819,4095,0,850,raw,pulses,0
+51,AMF Battery Voltage,25000,32500,25,32.5,Volts,volts,3
+52,AMF Battery Current,0,12000,-6,6,Amps,Amps,3
+53,AMF Battery Temperature,2631,3331,-10,60,temp,DegC,3
+54,Battery Capacity,6000,13000,0,7,Amps,A-Hour,3
+55,Conduit Pressure,819,4095,0,850,pressure-hyd,psi,3
+56,Hydrostatic Pressure,819,4095,0,850,Pressure,psi,3
+57,Status,0,1819,0,1819,raw,raw,3
+58,ARMED,50,920,50,920,raw,raw,0
