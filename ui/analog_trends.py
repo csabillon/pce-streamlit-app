@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from logic.analog_loader import load_analog_map, build_tag
+from logic.analog_trends_loader import load_analog_map, build_tag
 from logic.data_loaders import get_raw_df
 from logic.preprocessing import to_ms, downsample_for_display
 

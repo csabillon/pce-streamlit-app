@@ -18,7 +18,7 @@ def load_analog_map(rig: str) -> pd.DataFrame | None:
         no mapping file exists for the requested rig.
     """
 
-    base_dir = Path(__file__).resolve().parent / "analog_files"
+    base_dir = Path(__file__).resolve().parent / "trend_maps/subsea_analogs"
     file_path = base_dir / f"{rig}.csv"
 
     if not file_path.exists():
