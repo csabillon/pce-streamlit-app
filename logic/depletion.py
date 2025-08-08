@@ -66,10 +66,28 @@ VALVE_DEPLETION_WEIGHTS = {
 
 @lru_cache(maxsize=16)
 def get_depletion_weight(valve_class, state, flow_category):
+    """Return depletion weight for a valve transition.
+
+    Historically this function assumed ``state`` was always a valid string
+    (``"OPEN"``, ``"CLOSE"`` or ``"SHEAR"``).  In practice the dataset can
+    contain missing values which are represented as ``None``/``NaN``.  Calling
+    ``upper()`` on such values raised an ``AttributeError`` during
+    ``load_and_preprocess``.  This bubbled up and prevented the dashboard from
+    loading.
+
+    The function now guards against non-string states by coercing the input to
+    a string and returning a default depletion of ``0.0`` when the state is not
+    recognised.
+    """
+
     w = VALVE_DEPLETION_WEIGHTS.get(valve_class, {})
-    st = state.upper()
+
+    # Ensure ``state`` is a string to avoid ``AttributeError`` on ``upper()``
+    st = str(state).upper()
     if st == "SHEAR" and "shear" in w:
         return w["shear"]
+    if st not in {"OPEN", "CLOSE"}:
+        return 0.0
     prefix = "high" if flow_category == "High" else "normal"
     stroke = "open" if st == "OPEN" else "close"
     return w.get(f"{prefix}_{stroke}", 0.0)
