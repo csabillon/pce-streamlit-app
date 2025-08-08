@@ -18,7 +18,13 @@ def render_sidebar(default_rig: str | None = None, default_page: str | None = No
     )
     rig = rigs[rig_labels.index(selected_label)]
 
-    all_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles", "Pressure Cycles"]
+    all_pages = [
+        "Valve Analytics",
+        "Pods Overview",
+        "EDS Cycles",
+        "Pressure Cycles",
+        "Analog Trends",
+    ]
     page_index = all_pages.index(default_page) if default_page in all_pages else 0
     page = st.sidebar.radio("Select Page", all_pages, index=page_index, key="sidebar_page")
 
