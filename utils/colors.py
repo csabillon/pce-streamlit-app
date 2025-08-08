@@ -12,7 +12,7 @@ BY_COLORS = {
     "Yellow Pod": "#E87722",  # custom warm orange
 }
 
-# 3) FLOW-CATEGORY COLORS → Analogous Teal → Purple → Pink
+# 3) FLOW-CATEGORY COLORS → Analogous Teal → Purple → Red
 FLOW_COLORS = {
     "Low":  "#50CDB4",  # Ext Teal 5   
     "Mid":  "#875EC7",  # Ext Purple 5 
