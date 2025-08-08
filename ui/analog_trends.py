@@ -28,7 +28,7 @@ def _abbreviate(label: str) -> str:
     return label
 
 
-def _shorten(label: str, max_chars: int = 30) -> str:
+def _shorten(label: str, max_chars: int = 60) -> str:
     """Return label truncated to ``max_chars`` with ellipsis."""
     return label if len(label) <= max_chars else label[: max_chars - 1] + "…"
 
@@ -80,7 +80,7 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
     st.markdown(
         """
         <style>
-        .stMultiSelect [data-baseweb="tag"]{max-width:400px;}
+        .stMultiSelect [data-baseweb="tag"]{max-width:800px;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -90,10 +90,31 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
     channels, _, display_map = _select_channels(rig)
 
     graph_type = st.selectbox("Graph Type", ["Line", "Scatter", "Area"])
-    separate_axis = st.checkbox("Separate axis per channel", value=False)
+    dual_axis = st.checkbox("Use dual Y axes", value=False)
     align_method = st.selectbox(
         "Table Alignment", ["Resample to 1s", "Outer join and fill"], index=0
     )
+
+    left_channels: list[int] = []
+    right_channels: list[int] = []
+    if dual_axis and channels:
+        half = max(1, len(channels) // 2)
+        left_channels = st.multiselect(
+            "Left Axis Analogs",
+            channels,
+            default=channels[:half],
+            format_func=lambda c: display_map.get(c, str(c)),
+        )
+        remaining = [ch for ch in channels if ch not in left_channels]
+        right_channels = st.multiselect(
+            "Right Axis Analogs",
+            remaining,
+            default=remaining,
+            format_func=lambda c: display_map.get(c, str(c)),
+        )
+        channels = sorted(set(left_channels + right_channels))
+    else:
+        left_channels = channels
 
     if not channels:
         st.info("Select one or more channels to display.")
@@ -122,33 +143,47 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
     table_df = pd.concat(frames, axis=1)
     if align_method != "Resample to 1s":
         table_df = table_df.sort_index().ffill().bfill()
-
-    if st.checkbox("Show Data Table"):
-        table_download = table_df.reset_index().rename(columns={"index": "timestamp"})
-        st.dataframe(table_download, use_container_width=True)
-        csv = table_download.to_csv(index=False).encode("utf-8")
-        st.download_button("Download CSV", csv, "analog_trends.csv", "text/csv")
-
     chart_df_wide = downsample_for_display(table_df)
     chart_df = chart_df_wide.reset_index().rename(columns={"index": "timestamp"})
 
-    if separate_axis and len(chart_df_wide.columns) > 1:
+    if dual_axis and len(chart_df_wide.columns) > 0:
         mode_map = {"Line": "lines", "Scatter": "markers", "Area": "lines"}
         fig = go.Figure()
-        x_vals = chart_df_wide.index
-        for i, col in enumerate(chart_df_wide.columns, start=1):
-            axis = f"y{i}" if i > 1 else "y"
-            trace_kwargs = dict(x=x_vals, y=chart_df_wide[col], name=col, mode=mode_map[graph_type], yaxis=axis)
-            if graph_type == "Area":
-                trace_kwargs["fill"] = "tozeroy"
-            fig.add_trace(go.Scatter(**trace_kwargs))
-            axis_config = {"title": col}
-            if i > 1:
-                axis_config.update(overlaying="y", side="right" if i % 2 == 0 else "left")
-                fig.update_layout(**{f"yaxis{i}": axis_config})
-            else:
-                fig.update_layout(yaxis=axis_config)
         fig.update_layout(template=template)
+        x_vals = chart_df_wide.index
+        left_cols = [display_map.get(ch, str(ch)) for ch in left_channels]
+        right_cols = [display_map.get(ch, str(ch)) for ch in right_channels]
+        for col in left_cols:
+            if col in chart_df_wide.columns:
+                trace_kwargs = dict(
+                    x=x_vals,
+                    y=chart_df_wide[col],
+                    name=col,
+                    mode=mode_map[graph_type],
+                )
+                if graph_type == "Area":
+                    trace_kwargs["fill"] = "tozeroy"
+                fig.add_trace(go.Scatter(**trace_kwargs))
+        for col in right_cols:
+            if col in chart_df_wide.columns:
+                trace_kwargs = dict(
+                    x=x_vals,
+                    y=chart_df_wide[col],
+                    name=col,
+                    mode=mode_map[graph_type],
+                    yaxis="y2",
+                )
+                if graph_type == "Area":
+                    trace_kwargs["fill"] = "tozeroy"
+                fig.add_trace(go.Scatter(**trace_kwargs))
+        fig.update_layout(
+            yaxis=dict(title=", ".join(left_cols) if left_cols else None),
+            yaxis2=dict(
+                title=", ".join(right_cols) if right_cols else None,
+                overlaying="y",
+                side="right",
+            ),
+        )
     else:
         melt_df = chart_df.melt(id_vars="timestamp", var_name="channel", value_name="value")
         if graph_type == "Line":
@@ -172,4 +207,10 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
     stats = table_df.loc[x_start:x_end].agg(["mean", "max", "min"]).T
     stats = stats.rename(columns={"mean": "Mean", "max": "Max", "min": "Min"})
     st.dataframe(stats)
+
+    if st.checkbox("Show Data Table"):
+        table_download = table_df.reset_index().rename(columns={"index": "timestamp"})
+        st.dataframe(table_download, use_container_width=True)
+        csv = table_download.to_csv(index=False).encode("utf-8")
+        st.download_button("Download CSV", csv, "analog_trends.csv", "text/csv")
 
