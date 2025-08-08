@@ -135,9 +135,13 @@ else:
         well_pressure_series = _prs["well_pressure_series"]
     regulator_pressure_series_map = _prs["regulator_pressure_series_map"]
 
-# Sync URL with page
-if st.query_params.get("page") != page:
-    st.query_params["page"] = page
+# Sync URL with the most recent sidebar selection.
+# Using the session state prevents an earlier run from overwriting the
+# query parameters with a stale page value if the user navigates quickly.
+current_page = st.session_state.get("sidebar_page", page)
+if st.query_params.get("page") != current_page:
+    st.query_params["page"] = current_page
+page = current_page
 
 # Render
 if df is not None and vol_df is not None:
