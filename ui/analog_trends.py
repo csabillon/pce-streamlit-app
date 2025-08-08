@@ -27,6 +27,11 @@ def _abbreviate(label: str) -> str:
         label = label.replace(full, short)
     return label
 
+
+def _shorten(label: str, max_chars: int = 30) -> str:
+    """Return label truncated to ``max_chars`` with ellipsis."""
+    return label if len(label) <= max_chars else label[: max_chars - 1] + "…"
+
 def _get_date_range(default_start: datetime, default_end: datetime):
     """Render and return the date range selector for the trends page."""
 
@@ -47,22 +52,21 @@ def _select_channels(rig: str):
     mapping_df = load_analog_map(rig)
     display_map: dict[int, str] = {}
     if mapping_df is not None and not mapping_df.empty:
-        options = []
         label_map: dict[int, str] = {}
         for _, row in mapping_df.iterrows():
             ch = int(row.get("Ch"))
             name = str(row.get("Analog Name", "") or "").strip()
-            label = f"{ch} - {name}" if name else f"{ch}"
-            options.append(label)
-            label_map[ch] = label
-            display_map[ch] = f"{ch} - {_abbreviate(name)}" if name else f"{ch}"
-        selected_labels = st.multiselect("Select Analogs", options)
-        channels = [int(lbl.split(" - ")[0]) for lbl in selected_labels]
+            label_map[ch] = f"{ch} - {name}" if name else f"{ch}"
+            short = _shorten(_abbreviate(name)) if name else ""
+            display_map[ch] = f"{ch} - {short}" if short else f"{ch}"
+        options = list(label_map.keys())
+        channels = st.multiselect(
+            "Select Analogs", options, format_func=lambda c: display_map.get(c, str(c))
+        )
     else:
-        options = [str(i) for i in range(1, 65)]
-        selected_labels = st.multiselect("Select Channels", options)
-        channels = [int(x) for x in selected_labels]
-        label_map = {ch: str(ch) for ch in channels}
+        options = list(range(1, 65))
+        channels = st.multiselect("Select Channels", options)
+        label_map = {ch: str(ch) for ch in options}
         display_map = label_map.copy()
 
     return channels, label_map, display_map
@@ -87,6 +91,9 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
 
     graph_type = st.selectbox("Graph Type", ["Line", "Scatter", "Area"])
     separate_axis = st.checkbox("Separate axis per channel", value=False)
+    align_method = st.selectbox(
+        "Table Alignment", ["Resample to 1s", "Outer join and fill"], index=0
+    )
 
     if not channels:
         st.info("Select one or more channels to display.")
@@ -104,7 +111,8 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
         display_name = display_map.get(ch, str(ch))
         df = df.rename(columns={df.columns[0]: display_name})
         df.index = pd.to_datetime(df.index)
-        df = df.resample("1S").ffill().bfill()
+        if align_method == "Resample to 1s":
+            df = df.resample("1s").ffill().bfill()
         frames.append(df)
 
     if not frames:
@@ -112,9 +120,11 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
         return
 
     table_df = pd.concat(frames, axis=1)
-    table_download = table_df.reset_index().rename(columns={"index": "timestamp"})
+    if align_method != "Resample to 1s":
+        table_df = table_df.sort_index().ffill().bfill()
 
-    with st.expander("Show Data Table"):
+    if st.checkbox("Show Data Table"):
+        table_download = table_df.reset_index().rename(columns={"index": "timestamp"})
         st.dataframe(table_download, use_container_width=True)
         csv = table_download.to_csv(index=False).encode("utf-8")
         st.download_button("Download CSV", csv, "analog_trends.csv", "text/csv")
@@ -148,14 +158,16 @@ def render_analog_trends(rig: str, default_start: datetime, default_end: datetim
         else:  # Area
             fig = px.area(melt_df, x="timestamp", y="value", color="channel", template=template)
 
-    events = plotly_events(fig, events=["relayout"], key="analog_trend_plot")
+    events = plotly_events(fig, select_event=True, key="analog_trend_plot")
 
     x_start = table_df.index.min()
     x_end = table_df.index.max()
     if events:
         ev = events[-1]
-        x_start = pd.to_datetime(ev.get("xaxis.range[0]", x_start))
-        x_end = pd.to_datetime(ev.get("xaxis.range[1]", x_end))
+        xr = ev.get("range", {}).get("x")
+        if xr and len(xr) == 2:
+            x_start = pd.to_datetime(xr[0])
+            x_end = pd.to_datetime(xr[1])
 
     stats = table_df.loc[x_start:x_end].agg(["mean", "max", "min"]).T
     stats = stats.rename(columns={"mean": "Mean", "max": "Max", "min": "Min"})
