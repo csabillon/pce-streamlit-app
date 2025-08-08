@@ -1,5 +1,3 @@
-# ui/dashboard.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,40 +12,6 @@ from ui_components.charts import (
 )
 from ui_components.tables import generate_statistics_table, generate_details_table
 
-
-# ---- KPI helpers ------------------------------------------------------------
-
-def _compute_pressure_cycles_metrics(sub_df: pd.DataFrame) -> tuple[int, float, float]:
-    """
-    Count CLOSE->next OPEN pairs (for selected valve), average duration (min),
-    and total duration (min). Mirrors logic on Pressure Cycles page: cycles anchored on CLOSE.
-    """
-    if sub_df.empty:
-        return 0, 0.0, 0.0
-
-    s = sub_df.sort_values("timestamp").copy()
-    s["timestamp"] = pd.to_datetime(s["timestamp"])
-    states = s["state"].to_numpy()
-    times = s["timestamp"].to_numpy()
-
-    close_idxs = np.where(states == "CLOSE")[0]
-    durations = []
-    for idx in close_idxs:
-        nxt = np.where((np.arange(len(states)) > idx) & (states == "OPEN"))[0]
-        if nxt.size == 0:
-            continue
-        j = nxt[0]
-        dur_min = (times[j] - times[idx]).astype("timedelta64[s]").astype(float) / 60.0
-        if np.isfinite(dur_min) and dur_min >= 0:
-            durations.append(dur_min)
-
-    if not durations:
-        return 0, 0.0, 0.0
-
-    durations = np.array(durations, dtype=float)
-    return int(len(durations)), float(np.mean(durations)), float(np.sum(durations))
-
-
 def _render_kpi(label: str, value: str):
     st.markdown(
         f"""
@@ -59,31 +23,18 @@ def _render_kpi(label: str, value: str):
         unsafe_allow_html=True,
     )
 
-
 def _inject_kpi_css():
-    """
-    Theme-proof KPI styling:
-    - Text/border use var(--text-color) so they always contrast the theme background.
-    - Border uses currentColor to stay in sync with text color.
-    - Transparent background as requested.
-    - Subtle shadow and hover lift that work in both themes.
-    NOTE: injected every render to avoid any timing/rerender edge cases.
-    """
     st.markdown(
         """
         <style>
         .kpi-card{
-            /* Use Streamlit theme tokens */
             color: var(--text-color);
-            border:1.5px solid currentColor;  /* same color as text */
+            border:1.5px solid currentColor;
             border-radius:18px;
             padding:12px 16px;
             text-align:center;
             background:transparent;
-
-            /* Motion & elevation */
             transition: box-shadow 120ms ease, transform 120ms ease;
-            /* Neutral shadow that works on light/dark */
             box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         }
         .kpi-card:hover{
@@ -107,9 +58,6 @@ def _inject_kpi_css():
         unsafe_allow_html=True,
     )
 
-
-# ---- Main render ------------------------------------------------------------
-
 def render_dashboard(
     df: pd.DataFrame,
     vol_df: pd.DataFrame,
@@ -118,6 +66,8 @@ def render_dashboard(
     flow_colors: dict,
     flow_category_order: list,
     valve_order: list,
+    *,
+    cycles_df: pd.DataFrame | None = None,
 ):
     pod_names = ["Composite", "Blue Pod", "Yellow Pod"]
     tabs = st.tabs(pod_names)
@@ -161,24 +111,34 @@ def render_dashboard(
                 ordered=True,
             )
 
-            # ------------------ KPI ROW ------------------
             _inject_kpi_css()
 
-            wet_threshold = st.session_state.get("wet_threshold", 700)
+            wet_threshold = int(st.session_state.get("wet_threshold", 700))
+            rare_threshold = int(st.session_state.get("rare_cycle_threshold", 2500))
+
             open_count = int((sub["state"] == "OPEN").sum())
             close_count = int((sub["state"] == "CLOSE").sum())
 
-            # robust access in case "Max Well Pressure" is missing
             mwp = sub["Max Well Pressure"] if "Max Well Pressure" in sub.columns else pd.Series([np.nan] * len(sub), index=sub.index)
-
             wet_open = int(((sub["state"] == "OPEN") & (mwp > wet_threshold)).sum())
             wet_close = int(((sub["state"] == "CLOSE") & (mwp > wet_threshold)).sum())
 
-            cycles_cnt, avg_cycle_min, total_cycle_min = _compute_pressure_cycles_metrics(sub)
+            sel_cycles = pd.DataFrame()
+            if isinstance(cycles_df, pd.DataFrame) and not cycles_df.empty:
+                sel_cycles = cycles_df[cycles_df["Valve"] == choice]
+
+            if not sel_cycles.empty:
+                cycles_cnt = int(len(sel_cycles))
+                avg_cycle_min = float(sel_cycles["Duration (min)"].mean())
+                total_cycle_min = float(sel_cycles["Duration (min)"].sum())
+            else:
+                cycles_cnt = 0
+                avg_cycle_min = 0.0
+                total_cycle_min = 0.0
 
             kcols = st.columns(7)
             with kcols[0]:
-                _render_kpi("Pressure Cycles (Close→Open)", f"{cycles_cnt}")
+                _render_kpi(f"Pressure Cycles ≥ {rare_threshold} psi", f"{cycles_cnt}")
             with kcols[1]:
                 _render_kpi("Avg Cycle Duration", f"{avg_cycle_min:.0f} min")
             with kcols[2]:
@@ -191,7 +151,6 @@ def render_dashboard(
                 _render_kpi(f"Wet Open (>{wet_threshold} psi)", f"{wet_open}")
             with kcols[6]:
                 _render_kpi(f"Wet Close (>{wet_threshold} psi)", f"{wet_close}")
-            # ---------------------------------------------------
 
             st.subheader("Pressure and Flow Distribution by Flow Category")
             c1, c2, c3, c4 = st.columns(4)

@@ -13,6 +13,7 @@ from logic.tag_maps import get_rig_tags
 from logic.data_loaders import get_pressure_df
 from logic.preprocessing import to_ms
 from datetime import timedelta
+import pandas as pd
 
 st.set_page_config(
     page_title="BOP Valve Dashboard",
@@ -42,17 +43,9 @@ params = st.query_params
 requested_rig = params.get("rig")
 requested_theme = params.get("theme")
 
-# --- Fix for page selection via deeplink ---
-available_pages = [
-    "Valve Analytics",
-    "Pods Overview",
-    "EDS Cycles",
-    "Pressure Cycles",
-]
+available_pages = ["Valve Analytics", "Pods Overview", "EDS Cycles", "Pressure Cycles"]
 requested_page = params.get("page")
-page_from_deeplink = (
-    requested_page if requested_page in available_pages else available_pages[0]
-)
+page_from_deeplink = requested_page if requested_page in available_pages else available_pages[0]
 
 if requested_theme in ("dark", "light"):
     st._config.set_option("theme.base", requested_theme)
@@ -67,7 +60,6 @@ rig_map = {
 }
 default_rig = rig_map.get(requested_rig, None)
 
-# --- Use deep-link page if present ---
 sidebar_args = dict(default_rig=default_rig, default_page=page_from_deeplink)
 rig, start_date, end_date, category_windows, page = render_sidebar(**sidebar_args)
 
@@ -92,77 +84,86 @@ if st.sidebar.button("Reload Data"):
         if key in st.session_state:
             del st.session_state[key]
 
-# Load valve/volume analytics data
+# Load analytics data (+ precomputed cycles + well pressure)
 if data_key not in st.session_state:
-    df, vol_df = load_dashboard_data(
+    df, vol_df, cycles_df, well_pressure_series = load_dashboard_data(
         rig, start_date, end_date, category_windows, valve_map,
         per_valve_simple_map, per_valve_function_map,
         VALVE_CLASS_MAP, vol_ext, pressure_map,
         active_pod_tag, FLOW_THRESHOLDS
     )
-    st.session_state[data_key] = (df, vol_df)
+    st.session_state[data_key] = (df, vol_df, cycles_df, well_pressure_series)
 else:
-    df, vol_df = st.session_state[data_key]
+    df, vol_df, cycles_df, well_pressure_series = st.session_state[data_key]
 
-# --- PRESSURE SERIES LOADING AND CACHING (all at once!) ---
+# Apply Rare threshold globally to cycles (default 2500 psi)
+rare_thr = int(st.session_state.get("rare_cycle_threshold", 2500))
+filtered_cycles_df = cycles_df
+if isinstance(cycles_df, pd.DataFrame) and not cycles_df.empty:
+    filtered_cycles_df = cycles_df[cycles_df["Max Well Pressure"] >= rare_thr].copy()
+
+# Pressure series cache (for regulator traces)
 pressure_key = data_key + "_pressure"
 if pressure_key not in st.session_state:
     sm = to_ms(start_date)
     em = to_ms(end_date + timedelta(days=1)) - 1
     pressure_results = get_pressure_df(pressure_map, sm, em)
+
     pressure_series_by_valve = {}
-    well_pressure_series = None
-    # Assign all as Series for easy access
+    wp_series = well_pressure_series
+
     for p_df in pressure_results:
         valve_name = p_df["valve"].iat[0]
         p_ser = p_df.set_index(p_df.index)["pressure"].sort_index()
+        p_ser.index = pd.to_datetime(p_ser.index)
         pressure_series_by_valve[valve_name] = p_ser
-        # Pick well pressure
-        if valve_name.lower().startswith("well pressure"):
-            well_pressure_series = p_ser
-    # Regulator pressure: try by name for each valve, fallback to default if needed
+
     regulator_pressure_series_map = {}
     for v in valve_order:
-        # Try to match by valve name (exact, case-insensitive, or "Regulator Pressure")
-        found = None
-        for key in pressure_series_by_valve:
-            if key.lower().startswith("regulator pressure") or key.lower().startswith("regulator"):
-                found = key
-                break
-            if key.lower() == v.lower():
-                found = key
-        if found:
-            regulator_pressure_series_map[v] = pressure_series_by_valve[found]
-        else:
-            regulator_pressure_series_map[v] = None
+        ser = pressure_series_by_valve.get(v)
+        regulator_pressure_series_map[v] = ser
+
     st.session_state[pressure_key] = {
         "pressure_series_by_valve": pressure_series_by_valve,
-        "well_pressure_series": well_pressure_series,
+        "well_pressure_series": wp_series,
         "regulator_pressure_series_map": regulator_pressure_series_map,
     }
 else:
     _prs = st.session_state[pressure_key]
     pressure_series_by_valve = _prs["pressure_series_by_valve"]
-    well_pressure_series = _prs["well_pressure_series"]
+    if well_pressure_series is None:
+        well_pressure_series = _prs["well_pressure_series"]
     regulator_pressure_series_map = _prs["regulator_pressure_series_map"]
 
-# --- PAGE/URL STATE SYNC ---
-# Ensure URL reflects sidebar selection. Use new st.query_params API only!
+# Sync URL with page
 if st.query_params.get("page") != page:
     st.query_params["page"] = page
 
-# --- MAIN PAGE HANDLING ---
+# Render
 if df is not None and vol_df is not None:
     if page == "Valve Analytics":
         render_dashboard(
-            df, vol_df, plotly_template,
-            oc_colors, flow_colors, flow_category_order, valve_order,
+            df=df,
+            vol_df=vol_df,
+            plotly_template=plotly_template,
+            oc_colors=oc_colors,
+            flow_colors=flow_colors,
+            flow_category_order=flow_category_order,
+            valve_order=valve_order,
+            cycles_df=filtered_cycles_df,  # cycles already filtered by Rare
         )
+
     elif page == "Pods Overview":
         render_overview(
-            df, vol_df, plotly_template,
-            oc_colors, by_colors, flow_colors, flow_category_order,
+            df=df,
+            vol_df=vol_df,
+            plotly_template=plotly_template,
+            oc_colors=oc_colors,
+            by_colors=by_colors,
+            flow_colors=flow_colors,
+            flow_category_order=flow_category_order,
         )
+
     elif page == "EDS Cycles":
         render_eds_cycles(
             rig, start_date, end_date,
@@ -173,13 +174,15 @@ if df is not None and vol_df is not None:
             active_pod_tag=active_pod_tag,
             eds_base_tag=eds_base_tag,
         )
+
     elif page == "Pressure Cycles":
-        if well_pressure_series is not None:
+        if isinstance(well_pressure_series, pd.Series) and not well_pressure_series.empty:
             render_pressure_cycles(
                 df=df,
                 valve_map=valve_map,
                 well_pressure_series=well_pressure_series,
                 pressure_series_by_valve=regulator_pressure_series_map,
+                cycles_df=filtered_cycles_df,  # cycles already filtered by Rare
             )
         else:
             st.warning("No well pressure data available for analysis.")
