@@ -1,3 +1,5 @@
+# app.py
+
 from cognite.client.config import global_config
 import streamlit as st
 from utils.themes import get_plotly_template

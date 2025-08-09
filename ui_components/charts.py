@@ -11,6 +11,7 @@ BAR_SIZE = 250
 SMALL_MARGIN = dict(l=20, r=20, t=40, b=20)
 CONNECTOR_VALVES = {"LMRP Connector", "Wellhead Connector"}
 
+
 def get_state_label(valve_name, state):
     if valve_name in CONNECTOR_VALVES:
         if state == "OPEN":
@@ -20,6 +21,7 @@ def get_state_label(valve_name, state):
         return state
     else:
         return state
+
 
 def get_state_filter(df, desired_state):
     if "valve" not in df.columns or "state" not in df.columns:
@@ -39,11 +41,14 @@ def get_state_filter(df, desired_state):
             mask.append(s == desired_state)
     return pd.Series(mask, index=df.index)
 
+
 def get_chart_title(valve_name, state):
     return get_state_label(valve_name, state)
 
+
 def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
     valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
+
     def make_pie_bar(subset, state):
         if subset is None or subset.empty:
             return go.Figure(), go.Figure()
@@ -54,8 +59,7 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
             ordered=True,
         )
         counts = (
-            subset
-            .groupby("Flow Category", observed=True)
+            subset.groupby("Flow Category", observed=True)
             .size()
             .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
             .reset_index(name="Count")
@@ -81,8 +85,7 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
         pie.update_layout(legend_title_text="Flow Category", margin=SMALL_MARGIN)
 
         volume = (
-            subset
-            .groupby("Flow Category", observed=True)["Δ (gal)"]
+            subset.groupby("Flow Category", observed=True)["Δ (gal)"]
             .sum()
             .reindex(FLOW_CATEGORY_ORDER, fill_value=0)
             .reset_index(name="Δ (gal)")
@@ -102,9 +105,10 @@ def plot_open_close_pie_bar(df, flow_colors=FLOW_COLORS):
 
         return pie, bar
 
-    open_sub  = df[get_state_filter(df, "OPEN")]
+    open_sub = df[get_state_filter(df, "OPEN")]
     close_sub = df[get_state_filter(df, "CLOSE")]
     return make_pie_bar(open_sub, "OPEN") + make_pie_bar(close_sub, "CLOSE")
+
 
 def plot_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
     valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
@@ -133,9 +137,10 @@ def plot_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
         return fig
 
     return (
-        mk_box(d[get_state_filter(d, "OPEN")],  "OPEN"),
+        mk_box(d[get_state_filter(d, "OPEN")], "OPEN"),
         mk_box(d[get_state_filter(d, "CLOSE")], "CLOSE"),
     )
+
 
 def plot_pressure_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
     valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
@@ -164,12 +169,14 @@ def plot_pressure_boxplots(df, flow_colors=FLOW_COLORS, template="plotly"):
         return fig
 
     return (
-        mk_box(d[get_state_filter(d, "OPEN")],  "OPEN"),
+        mk_box(d[get_state_filter(d, "OPEN")], "OPEN"),
         mk_box(d[get_state_filter(d, "CLOSE")], "CLOSE"),
     )
 
+
 def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template):
     valve_name = df["valve"].iloc[0] if not df.empty and "valve" in df.columns else ""
+
     def mk_trace(sub_df, x, y, state):
         if sub_df is None or sub_df.empty:
             return go.Figure()
@@ -193,15 +200,16 @@ def plot_scatter_by_flowcategory(df, flow_colors, flow_category_order, template)
         fig.update_layout(margin=SMALL_MARGIN)
         return fig
 
-    open_sub  = df[get_state_filter(df, "OPEN")]
+    open_sub = df[get_state_filter(df, "OPEN")]
     close_sub = df[get_state_filter(df, "CLOSE")]
 
     return (
-        mk_trace(open_sub,  "Flow Rate (gpm)", "Max Pressure", "OPEN"),
-        mk_trace(open_sub,  "Δ (gal)",         "Max Pressure", "OPEN"),
+        mk_trace(open_sub, "Flow Rate (gpm)", "Max Pressure", "OPEN"),
+        mk_trace(open_sub, "Δ (gal)", "Max Pressure", "OPEN"),
         mk_trace(close_sub, "Flow Rate (gpm)", "Max Pressure", "CLOSE"),
-        mk_trace(close_sub, "Δ (gal)",         "Max Pressure", "CLOSE"),
+        mk_trace(close_sub, "Δ (gal)", "Max Pressure", "CLOSE"),
     )
+
 
 def plot_accumulator(vol_df, template="plotly"):
     df = vol_df.reset_index().rename(columns={"index": "timestamp"}).copy()
@@ -230,10 +238,82 @@ def plot_accumulator(vol_df, template="plotly"):
     )
     return fig
 
+
+# ---------- Generic time-series for the Analog Trends page ----------
+def plot_time_series_generic(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    color: str | None = None,
+    dual_y: bool = False,
+    show_points: bool = False,
+    line_shape: str = "linear",
+) -> go.Figure:
+    """
+    Generic time series plotter for Analog Trends.
+    Does NOT set a Plotly template; caller should apply theme.
+    """
+    if df is None or df.empty:
+        fig = go.Figure()
+        fig.update_layout(xaxis_title=x, yaxis_title=y)
+        return fig
+
+    if not dual_y:
+        fig = px.line(df, x=x, y=y, color=color)
+        fig.update_traces(line_shape=line_shape)
+        if show_points:
+            fig.update_traces(mode="lines+markers")
+        fig.update_layout(
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+        )
+        return fig
+
+    channels = df[color].dropna().unique().tolist() if color else ["value"]
+    left_ch = channels[:1]
+    right_ch = channels[1:]
+
+    fig = go.Figure()
+    for ch in left_ch:
+        sub = df[df[color] == ch] if color else df
+        fig.add_trace(
+            go.Scatter(
+                x=sub[x],
+                y=sub[y],
+                name=ch if color else y,
+                mode="lines+markers" if show_points else "lines",
+                line_shape=line_shape,
+                yaxis="y1",
+            )
+        )
+    for ch in right_ch:
+        sub = df[df[color] == ch]
+        fig.add_trace(
+            go.Scatter(
+                x=sub[x],
+                y=sub[y],
+                name=ch,
+                mode="lines+markers" if show_points else "lines",
+                line_shape=line_shape,
+                yaxis="y2",
+            )
+        )
+
+    fig.update_layout(
+        xaxis=dict(title=x),
+        yaxis=dict(title="Value (left)"),
+        yaxis2=dict(title="Value (right)", overlaying="y", side="right"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    return fig
+
+
+
 def plot_time_series(sub_df, template="plotly", oc_colors=None):
     from plotly.subplots import make_subplots
-    import plotly.graph_objects as go
-    valve_name = sub_df["valve"].iloc[0] if not sub_df.empty and "valve" in sub_df.columns else ""
+
+    valve_name = (
+        sub_df["valve"].iloc[0] if not sub_df.empty and "valve" in sub_df.columns else ""
+    )
     fig = make_subplots(
         rows=2,
         cols=1,

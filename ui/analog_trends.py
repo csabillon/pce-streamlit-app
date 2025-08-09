@@ -1,216 +1,368 @@
-from datetime import datetime, timedelta
-
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+# ui/analog_trends.py
 import streamlit as st
-from streamlit_plotly_events import plotly_events
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
+from utils.themes import get_plotly_template
 from logic.analog_trends_loader import load_analog_map, build_tag
 from logic.data_loaders import get_raw_df
-from logic.preprocessing import to_ms, downsample_for_display
 
 
-ABBREVIATIONS = {
-    "Regulator": "Reg",
-    "Temperature": "Temp",
-    "Readback": "RB",
-    "Inclinometer": "Inc",
-    "Direction": "Dir",
-    "Hydrostatic": "Hyd",
-    "Solenoid": "Sol",
-}
+# ---------- helpers ----------
+def _to_date(x):
+    if x is None:
+        return None
+    t = pd.to_datetime(x, errors="coerce")
+    return None if pd.isna(t) else pd.Timestamp(t.date())
 
+def _to_ms_utc(ts):
+    t = pd.to_datetime(ts, errors="coerce")
+    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    return int(t.timestamp() * 1000)
 
-def _abbreviate(label: str) -> str:
-    for full, short in ABBREVIATIONS.items():
-        label = label.replace(full, short)
-    return label
+def _normalize_timeseries_df(obj) -> pd.DataFrame:
+    if obj is None:
+        return pd.DataFrame(columns=["timestamp", "value"])
+    if isinstance(obj, pd.Series):
+        df = pd.DataFrame({
+            "timestamp": pd.to_datetime(obj.index, utc=True, errors="coerce"),
+            "value": pd.to_numeric(obj.values, errors="coerce"),
+        })
+        return df.dropna(subset=["timestamp", "value"]).sort_values("timestamp")
 
+    df = obj.copy()
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp", "value"])
 
-def _shorten(label: str, max_chars: int = 60) -> str:
-    """Return label truncated to ``max_chars`` with ellipsis."""
-    return label if len(label) <= max_chars else label[: max_chars - 1] + "…"
+    if pd.api.types.is_datetime64_any_dtype(df.index):
+        df = df.reset_index().rename(columns={df.index.name or "index": "timestamp"})
 
-def _get_date_range(default_start: datetime, default_end: datetime):
-    """Render and return the date range selector for the trends page."""
+    lower = {c.lower(): c for c in df.columns}
+    ts_col = next((lower[c] for c in ("timestamp","time","datetime","date","ts") if c in lower), None)
+    if ts_col is None:
+        ts_col = next((c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])), None)
+    if ts_col is None:
+        ts_col = next((c for c in df.columns if "time" in c.lower() or "date" in c.lower()), None)
+    if ts_col is None:
+        return pd.DataFrame(columns=["timestamp","value"])
 
-    value = st.date_input(
-        "Trend Date Range",
-        value=(default_start, default_end),
-        key="analog_trend_dates",
-    )
+    val_col = next((lower[c] for c in ("value","val","y","v") if c in lower), None)
+    if val_col is None:
+        val_col = next((c for c in df.columns if c != ts_col and pd.api.types.is_numeric_dtype(df[c])), None)
+    if val_col is None:
+        return pd.DataFrame(columns=["timestamp","value"])
 
-    if isinstance(value, (list, tuple)) and len(value) == 2:
-        return value[0], value[1]
-    return value, value
+    d = df[[ts_col, val_col]].rename(columns={ts_col:"timestamp", val_col:"value"})
 
-
-def _select_channels(rig: str):
-    """Return list of selected channel numbers and mapping to labels."""
-
-    mapping_df = load_analog_map(rig)
-    display_map: dict[int, str] = {}
-    if mapping_df is not None and not mapping_df.empty:
-        label_map: dict[int, str] = {}
-        for _, row in mapping_df.iterrows():
-            ch = int(row.get("Ch"))
-            name = str(row.get("Analog Name", "") or "").strip()
-            label_map[ch] = f"{ch} - {name}" if name else f"{ch}"
-            short = _shorten(_abbreviate(name)) if name else ""
-            display_map[ch] = f"{ch} - {short}" if short else f"{ch}"
-        options = list(label_map.keys())
-        channels = st.multiselect(
-            "Select Analogs", options, format_func=lambda c: display_map.get(c, str(c))
-        )
+    if pd.api.types.is_numeric_dtype(d["timestamp"]):
+        s = pd.to_numeric(d["timestamp"], errors="coerce")
+        m = s.max()
+        unit = "ns" if m>1e16 else "ms" if m>1e12 else "s" if m>1e10 else "ms"
+        d["timestamp"] = pd.to_datetime(s, unit=unit, utc=True, errors="coerce")
     else:
-        options = list(range(1, 65))
-        channels = st.multiselect("Select Channels", options)
-        label_map = {ch: str(ch) for ch in options}
-        display_map = label_map.copy()
+        d["timestamp"] = pd.to_datetime(d["timestamp"], utc=True, errors="coerce")
 
-    return channels, label_map, display_map
+    d["value"] = pd.to_numeric(d["value"], errors="coerce")
+    return d.dropna(subset=["timestamp","value"]).sort_values("timestamp")
 
 
-def render_analog_trends(rig: str, default_start: datetime, default_end: datetime, template: str):
-    """Render the Analog Trends page."""
+# ---------- LTTB downsampling ----------
+def _lttb(x: np.ndarray, y: np.ndarray, n_out: int) -> np.ndarray:
+    N = x.size
+    if n_out >= N or n_out < 3:
+        return np.arange(N)
+    bucket = (N - 2) / (n_out - 2)
+    idx = np.zeros(n_out, dtype=np.int64)
+    idx[0], idx[-1] = 0, N - 1
+    a = 0
+    for i in range(1, n_out - 1):
+        L = int(np.floor((i - 1) * bucket)) + 1
+        R = min(int(np.floor(i * bucket)) + 1, N - 1)
+        bx, by = x[L:R], y[L:R]
+        if bx.size == 0:
+            idx[i] = a
+            continue
+        nL = int(np.floor(i * bucket)) + 1
+        nR = min(int(np.floor((i + 1) * bucket)) + 1, N)
+        cx = np.mean(x[nL:nR]) if nL < nR else x[-1]
+        cy = np.mean(y[nL:nR]) if nL < nR else y[-1]
+        ax, ay = x[a], y[a]
+        area = np.abs((ax - cx) * (by - ay) - (ay - cy) * (bx - ax))
+        a = L + int(np.argmax(area))
+        idx[i] = a
+    return idx
 
-    st.header("Analog Trends")
+def _downsample_lttb(df: pd.DataFrame, channel_col: str, max_pts: int = 15000) -> pd.DataFrame:
+    if df.empty:
+        return df
+    parts = []
+    for ch, g in df.groupby(channel_col, dropna=False):
+        g = g.sort_values("timestamp")
+        if len(g) <= max_pts:
+            parts.append(g)
+            continue
+        x = g["timestamp"].astype("int64", copy=False).to_numpy()
+        y = g["value"].to_numpy(float)
+        keep = _lttb(x, y, max_pts)
+        parts.append(g.iloc[keep].copy())
+    return pd.concat(parts, ignore_index=True) if parts else df
 
+
+# ---------- tables & summary ----------
+def _table_align_timestamps(raw_df: pd.DataFrame) -> pd.DataFrame:
+    if raw_df.empty:
+        return pd.DataFrame()
+    wide = (
+        raw_df.pivot_table(index="timestamp", columns="channel", values="value", aggfunc="mean")
+        .sort_index()
+    )
+    wide = wide.ffill().bfill()
+    return wide.reset_index()
+
+def _table_align_1s(raw_df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    if raw_df.empty:
+        return pd.DataFrame()
+    full = pd.date_range(start=start, end=end, freq="1s", tz="UTC")
+    wide = None
+    for ch, g in raw_df.groupby("channel", dropna=False):
+        s = g.set_index("timestamp")["value"].sort_index()
+        s = s.reindex(full).ffill().bfill()
+        col = s.rename(ch).to_frame()
+        wide = col if wide is None else wide.join(col, how="outer")
+    wide = wide.ffill().bfill()
+    return wide.reset_index().rename(columns={"index": "timestamp"})
+
+def _summary_full_range(wide_df: pd.DataFrame) -> pd.DataFrame:
+    if wide_df is None or wide_df.empty:
+        return pd.DataFrame(columns=["channel", "Mean", "Median", "Max", "Min", "Std", "Count"])
+    df = wide_df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    cols = [c for c in df.columns if c != "timestamp" and pd.api.types.is_numeric_dtype(df[c])]
+    if not cols:
+        return pd.DataFrame(columns=["channel", "Mean", "Median", "Max", "Min", "Std", "Count"])
+    stats = df[cols].agg(["mean", "median", "max", "min", "std", "count"]).T.reset_index()
+    stats.columns = ["channel", "Mean", "Median", "Max", "Min", "Std", "Count"]
+    return stats
+
+
+# ---------- page ----------
+def render_analog_trends(rig: str, default_start=None, default_end=None, template=None) -> None:
+    st.title("Analog Trends")
+
+    # keep chevrons (Clear all). Just trim some internal padding.
     st.markdown(
         """
         <style>
-        .stMultiSelect [data-baseweb="tag"]{max-width:800px;}
+          div[data-baseweb="select"] > div { padding-right: 6px !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    start_date, end_date = _get_date_range(default_start, default_end)
-    channels, _, display_map = _select_channels(rig)
+    # thin options panel
+    left, right = st.columns([0.12, 0.88], gap="small")
 
-    graph_type = st.selectbox("Graph Type", ["Line", "Scatter", "Area"])
-    dual_axis = st.checkbox("Use dual Y axes", value=False)
-    align_method = st.selectbox(
-        "Table Alignment", ["Resample to 1s", "Outer join and fill"], index=0
-    )
+    if default_end is None:
+        default_end = pd.Timestamp.utcnow().normalize()
+    if default_start is None:
+        default_start = pd.Timestamp(default_end) - pd.Timedelta(days=60)
 
-    left_channels: list[int] = []
-    right_channels: list[int] = []
-    if dual_axis and channels:
-        half = max(1, len(channels) // 2)
-        left_channels = st.multiselect(
-            "Left Axis Analogs",
-            channels,
-            default=channels[:half],
-            format_func=lambda c: display_map.get(c, str(c)),
+    with left:
+        st.subheader("Options")
+
+        # Date handling: require both dates
+        trend_input = st.date_input(
+            "Trend Date Range",
+            value=(_to_date(default_start), _to_date(default_end)),
+            key="analog_trend_dates",
         )
-        remaining = [ch for ch in channels if ch not in left_channels]
-        right_channels = st.multiselect(
-            "Right Axis Analogs",
-            remaining,
-            default=remaining,
-            format_func=lambda c: display_map.get(c, str(c)),
-        )
-        channels = sorted(set(left_channels + right_channels))
-    else:
-        left_channels = channels
+        valid_dates = isinstance(trend_input, (list, tuple)) and len(trend_input) == 2 and all(trend_input)
+        if not valid_dates:
+            st.info("Select both start and end dates to load data.")
+            st.selectbox("Graph Type", ["Line", "Scatter", "Area"], index=0, key="graph_type_tmp")
+            st.checkbox("Use Dual Y Axes", value=False, key="dual_tmp")
+            return
 
-    if not channels:
-        st.info("Select one or more channels to display.")
+        # Time window
+        day_start = pd.Timestamp(trend_input[0])
+        day_end = pd.Timestamp(trend_input[1])
+        if day_end < day_start:
+            day_start, day_end = day_end, day_start
+        day_end = day_end + pd.Timedelta(days=1) - pd.Timedelta(milliseconds=1)
+        sm, em = _to_ms_utc(day_start), _to_ms_utc(day_end)
+
+        graph_type = st.selectbox("Graph Type", ["Line", "Scatter", "Area"], index=0, key="graph_type_main")
+        use_dual_y = st.checkbox("Use Dual Y Axes", value=False, key="dual_main")
+
+        # Keys for axis widgets
+        left_key = "left_axis_select"
+        right_key = "right_axis_select"
+
+        # If dual disabled, clear the axis widget state BEFORE any widgets with those keys are created
+        if not use_dual_y:
+            st.session_state.pop(left_key, None)
+            st.session_state.pop(right_key, None)
+
+        # Build labels (full)
+        analog_map = load_analog_map(rig)
+        have_map = analog_map is not None and len(analog_map) > 0
+        label_to_channel: dict[str, int] = {}
+
+        if have_map:
+            analog_map = analog_map.copy()
+
+            def _label_row(r):
+                ch = int(r["Ch"])
+                name = r.get("Analog Name")
+                units = r.get("Units")
+                name_str = "" if (name is None or (isinstance(name, float) and pd.isna(name))) else str(name)
+                units_str = "" if (units is None or (isinstance(units, float) and pd.isna(units))) else str(units)
+                base = f"{ch} · {name_str}" if name_str else f"{ch} · Channel"
+                return f"{base} [{units_str}]" if units_str else base
+
+            analog_map["full_label"] = analog_map.apply(_label_row, axis=1)
+            for _, r in analog_map.iterrows():
+                label_to_channel[r["full_label"]] = int(r["Ch"])
+            all_labels = analog_map["full_label"].tolist()
+        else:
+            st.info("No analog channel map found — select channels directly.")
+            all_labels = [f"Ch {n}" for n in range(1, 100)]
+            label_to_channel = {lbl: int(lbl.split()[-1]) for lbl in all_labels}
+
+        # Main selection
+        sel_key = "select_analogs"
+        selected_labels = st.multiselect(
+            "Select Analogs",
+            options=all_labels,
+            default=st.session_state.get(sel_key, []),
+            key=sel_key,
+        )
+
+        # Axis selectors only when dual is enabled and we have selections
+        if use_dual_y and selected_labels:
+            # compute clean defaults BEFORE widgets
+            prev_left = [x for x in st.session_state.get(left_key, []) if x in selected_labels]
+            prev_right = [x for x in st.session_state.get(right_key, []) if x in selected_labels]
+
+            if not prev_left and not prev_right:
+                mid = max(1, len(selected_labels) // 2)
+                prev_left = selected_labels[:mid]
+                prev_right = selected_labels[mid:] or [selected_labels[-1]]
+
+            # favor left on overlap
+            overlap = set(prev_left) & set(prev_right)
+            if overlap:
+                prev_right = [x for x in prev_right if x not in overlap]
+
+            # render widgets with cleaned defaults; DO NOT write to session_state after
+            left_labels = st.multiselect(
+                "Left Y Axis",
+                options=selected_labels,
+                default=prev_left,
+                key=left_key,
+            )
+            right_labels = st.multiselect(
+                "Right Y Axis",
+                options=selected_labels,
+                default=prev_right,
+                key=right_key,
+            )
+        else:
+            left_labels, right_labels = [], []
+
+    # Nothing selected -> stop
+    if not selected_labels:
+        with right:
+            st.info("Select one or more analogs to plot.")
         return
 
-    sm = to_ms(start_date)
-    em = to_ms(end_date + timedelta(days=1)) - 1
-
+    # Fetch data
+    fetch_list = [(label_to_channel[lbl], lbl) for lbl in selected_labels]
     frames = []
-    for ch in channels:
-        tag = build_tag(rig, ch)
-        df = get_raw_df(tag, sm, em)
-        if df.empty:
-            continue
-        display_name = display_map.get(ch, str(ch))
-        df = df.rename(columns={df.columns[0]: display_name})
-        df.index = pd.to_datetime(df.index)
-        if align_method == "Resample to 1s":
-            df = df.resample("1s").ffill().bfill()
-        frames.append(df)
+    for ch, label in fetch_list:
+        tag = build_tag(rig, int(ch))
+        raw = get_raw_df(tag, sm, em)
+        norm = _normalize_timeseries_df(raw)
+        if not norm.empty:
+            norm["channel"] = label
+            frames.append(norm)
+    raw_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["timestamp","value","channel"])
 
-    if not frames:
-        st.warning("No data returned for selected channels.")
-        return
+    # Table & metrics
+    display_df = _table_align_timestamps(raw_df) if not raw_df.empty else pd.DataFrame(columns=["timestamp"])
+    full_stats = _summary_full_range(display_df)
 
-    table_df = pd.concat(frames, axis=1)
-    if align_method != "Resample to 1s":
-        table_df = table_df.sort_index().ffill().bfill()
-    chart_df_wide = downsample_for_display(table_df)
-    chart_df = chart_df_wide.reset_index().rename(columns={"index": "timestamp"})
+    with right:
+        tpl = template or get_plotly_template()
+        plot_df = _downsample_lttb(raw_df, "channel", 15000) if not raw_df.empty else raw_df
 
-    if dual_axis and len(chart_df_wide.columns) > 0:
-        mode_map = {"Line": "lines", "Scatter": "markers", "Area": "lines"}
-        fig = go.Figure()
-        fig.update_layout(template=template)
-        x_vals = chart_df_wide.index
-        left_cols = [display_map.get(ch, str(ch)) for ch in left_channels]
-        right_cols = [display_map.get(ch, str(ch)) for ch in right_channels]
-        for col in left_cols:
-            if col in chart_df_wide.columns:
-                trace_kwargs = dict(
-                    x=x_vals,
-                    y=chart_df_wide[col],
-                    name=col,
-                    mode=mode_map[graph_type],
-                )
-                if graph_type == "Area":
-                    trace_kwargs["fill"] = "tozeroy"
-                fig.add_trace(go.Scatter(**trace_kwargs))
-        for col in right_cols:
-            if col in chart_df_wide.columns:
-                trace_kwargs = dict(
-                    x=x_vals,
-                    y=chart_df_wide[col],
-                    name=col,
-                    mode=mode_map[graph_type],
-                    yaxis="y2",
-                )
-                if graph_type == "Area":
-                    trace_kwargs["fill"] = "tozeroy"
-                fig.add_trace(go.Scatter(**trace_kwargs))
+        fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+        fill = "tozeroy" if graph_type == "Area" else None
+        show_markers = (graph_type == "Scatter")
+
+        right_set = set(right_labels) if use_dual_y else set()
+        for name in plot_df["channel"].dropna().unique():
+            sub = plot_df[plot_df["channel"] == name]
+            use_right = (name in right_set)
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["timestamp"], y=sub["value"], name=name,
+                    mode=("lines+markers" if show_markers else "lines"),
+                    fill=fill, connectgaps=True,
+                ),
+                row=1, col=1, secondary_y=use_right
+            )
+
         fig.update_layout(
-            yaxis=dict(title=", ".join(left_cols) if left_cols else None),
-            yaxis2=dict(
-                title=", ".join(right_cols) if right_cols else None,
-                overlaying="y",
-                side="right",
-            ),
+            template=tpl,
+            height=620,
+            margin=dict(l=44, r=60, t=36, b=36),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            uirevision="analog-trends",
         )
-    else:
-        melt_df = chart_df.melt(id_vars="timestamp", var_name="channel", value_name="value")
-        if graph_type == "Line":
-            fig = px.line(melt_df, x="timestamp", y="value", color="channel", template=template)
-        elif graph_type == "Scatter":
-            fig = px.scatter(melt_df, x="timestamp", y="value", color="channel", template=template)
-        else:  # Area
-            fig = px.area(melt_df, x="timestamp", y="value", color="channel", template=template)
+        fig.update_xaxes(title_text="timestamp", rangeslider_visible=False)
+        fig.update_yaxes(
+            title_text="Value (Left)", secondary_y=False,
+            showline=True, ticks="outside", automargin=True, title_standoff=12
+        )
+        if use_dual_y:
+            fig.update_yaxes(
+                title_text="Value (Right)", secondary_y=True,
+                showline=True, ticks="outside", automargin=True, title_standoff=12,
+                showticklabels=True
+            )
 
-    events = plotly_events(fig, select_event=True, key="analog_trend_plot")
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"scrollZoom": True, "doubleClick": "reset"},
+        )
 
-    x_start = table_df.index.min()
-    x_end = table_df.index.max()
-    if events:
-        ev = events[-1]
-        xr = ev.get("range", {}).get("x")
-        if xr and len(xr) == 2:
-            x_start = pd.to_datetime(xr[0])
-            x_end = pd.to_datetime(xr[1])
+        st.markdown("### Key Metrics")
+        if not full_stats.empty:
+            num_cols = ["Mean", "Median", "Max", "Min", "Std", "Count"]
+            for c in num_cols:
+                if c in full_stats.columns:
+                    full_stats[c] = pd.to_numeric(full_stats[c], errors="coerce").round(3)
+            st.dataframe(full_stats, use_container_width=True, hide_index=True)
+        else:
+            st.info("No data available for the selected date range.")
 
-    stats = table_df.loc[x_start:x_end].agg(["mean", "max", "min"]).T
-    stats = stats.rename(columns={"mean": "Mean", "max": "Max", "min": "Min"})
-    st.dataframe(stats)
+        st.markdown("---")
+        st.markdown("### Table")
+        align_choice = st.selectbox(
+            "Table Alignment",
+            options=["Align to timestamps", "Resample to 1s (ffill/bfill)", "No alignment"],
+            index=0,
+        )
+        if not raw_df.empty:
+            if align_choice.startswith("Align to timestamps"):
+                display_df = _table_align_timestamps(raw_df)
+            elif align_choice.startswith("Resample to 1s"):
+                display_df = _table_align_1s(raw_df, day_start.tz_localize("UTC"), day_end.tz_localize("UTC"))
+            else:
+                display_df = _table_align_timestamps(raw_df)
 
-    if st.checkbox("Show Data Table"):
-        table_download = table_df.reset_index().rename(columns={"index": "timestamp"})
-        st.dataframe(table_download, use_container_width=True)
-        csv = table_download.to_csv(index=False).encode("utf-8")
-        st.download_button("Download CSV", csv, "analog_trends.csv", "text/csv")
-
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
